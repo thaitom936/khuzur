@@ -99,6 +99,12 @@ local function playerEntry(fd, c)
 end
 
 local STAKES = { [0] = true, [100] = true, [500] = true, [2000] = true }
+local stakesEnabled -- coin tables switch, set from config in skynet.start
+
+local function stakeAllowed(stake)
+  if not STAKES[stake] then return false end
+  return stake == 0 or stakesEnabled
+end
 
 -- Takes the entry fee before queueing/joining. Returns nil, err on failure.
 local function escrow(uid, stakeAmount)
@@ -117,7 +123,7 @@ end
 HANDLERS.quick_match = authed(function(fd, c, msg)
   if roomOf(c.uid) then return nil, "already_in_room" end
   local stake = tonumber(msg.stake) or 0
-  if not STAKES[stake] then return nil, "bad_stake" end
+  if not stakeAllowed(stake) then return nil, "bad_stake" end
   local ok, err = escrow(c.uid, stake)
   if not ok then return nil, err end
   ok, err = skynet.call(".match", "lua", "enqueue",
@@ -139,11 +145,11 @@ HANDLERS.create_room = authed(function(fd, c, msg)
   local size = tonumber(msg.size) or 4
   if size < 2 or size > 5 then return nil, "bad_size" end
   local stake = tonumber(msg.stake) or 0
-  if not STAKES[stake] then return nil, "bad_stake" end
+  if not stakeAllowed(stake) then return nil, "bad_stake" end
   local ok, err = escrow(c.uid, stake)
   if not ok then return nil, err end
   local _, roomCode = skynet.call(".hub", "lua", "create_room", "friend",
-    size, { playerEntry(fd, c) }, stake)
+    size, { playerEntry(fd, c) }, stake, msg.locked and true or false)
   return { code = roomCode }
 end)
 
@@ -388,6 +394,7 @@ function CMD.kick(fd)
 end
 
 skynet.start(function()
+  stakesEnabled = skynet.getenv "stakes_enabled" == "true"
   skynet.dispatch("lua", function(_, _, cmd, ...)
     CMD[cmd](...)
   end)

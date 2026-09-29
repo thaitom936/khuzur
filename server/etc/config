@@ -39,3 +39,7 @@ quick_size = 5
 -- lower it when the player base is small.
 match_min_humans = 5
 match_fill_after = 500
+-- Coin tables are off for now (free tables only).
+stakes_enabled = "false"
+-- Keep this many all-bot showcase tables running for the lobby.
+bot_rooms = 5

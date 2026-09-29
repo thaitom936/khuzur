@@ -6,10 +6,53 @@ require "skynet.manager" -- for skynet.register
 
 local online = {}   -- uid -> {agent, fd}
 local uid_room = {} -- uid -> room service addr
-local rooms = {}    -- room addr -> {mode, code}
+local rooms = {}    -- room addr -> {mode, code, stake, size, locked}
 local codes = {}    -- code -> room addr
 
 local CMD = {}
+
+-- Showcase rooms: bot_rooms tables full of bots play round the clock so
+-- the lobby always has something to watch or sit down into.
+local BOT_NAMES = {
+  "Bataa", "Bold", "Saruul", "Tuya", "Nomin",
+  "Oyunaa", "Temuulen", "Anar", "Zolboo", "Khulan",
+}
+local botRoomTarget = 0
+
+local function countBotRooms()
+  local n = 0
+  for _, meta in pairs(rooms) do
+    if meta.mode == "bot" then n = n + 1 end
+  end
+  return n
+end
+
+local function spawnBotRoom()
+  local players, used = {}, {}
+  for i = 1, 5 do
+    local name
+    repeat
+      name = BOT_NAMES[math.random(#BOT_NAMES)]
+    until not used[name]
+    used[name] = true
+    players[i] = { bot = true, name = name }
+  end
+  CMD.create_room("bot", 5, players, 0, false)
+end
+
+local spawning = 0 -- spawns in flight (spawnBotRoom yields internally)
+
+local function ensureBotRooms()
+  while countBotRooms() + spawning < botRoomTarget do
+    spawning = spawning + 1
+    local ok, err = pcall(spawnBotRoom)
+    spawning = spawning - 1
+    if not ok then
+      skynet.error("[hub] bot room spawn failed: " .. tostring(err))
+      break
+    end
+  end
+end
 
 ---------------------------------------------------------------- presence
 
@@ -66,12 +109,14 @@ function CMD.room_addr(code)
   return codes[code]
 end
 
---- All rooms for the lobby list.
+--- Public rooms for the lobby list (locked ones are code/invite only).
 function CMD.room_list()
   local out = {}
-  for room in pairs(rooms) do
-    local ok, info = pcall(skynet.call, room, "lua", "info")
-    if ok and info then out[#out + 1] = info end
+  for room, meta in pairs(rooms) do
+    if not meta.locked then
+      local ok, info = pcall(skynet.call, room, "lua", "info")
+      if ok and info then out[#out + 1] = info end
+    end
   end
   table.sort(out, function(a, b) return a.code < b.code end)
   return out
@@ -87,12 +132,15 @@ end
 
 --- Creates a room. players: list of {uid, name, agent, fd} (quick match
 --- passes the full table incl. bots; friend rooms start with the creator).
-function CMD.create_room(mode, size, players, stake)
+function CMD.create_room(mode, size, players, stake, locked)
   local room = skynet.newservice("room")
   -- Every room gets a code so the lobby list can address it.
   local code = newCode()
   codes[code] = room
-  rooms[room] = { mode = mode, code = code, stake = stake or 0, size = size }
+  rooms[room] = {
+    mode = mode, code = code, stake = stake or 0, size = size,
+    locked = locked or false,
+  }
   for _, p in ipairs(players) do
     if p.uid then uid_room[p.uid] = room end
   end
@@ -101,6 +149,7 @@ function CMD.create_room(mode, size, players, stake)
     size = size,
     code = code,
     stake = stake or 0,
+    locked = locked or false,
     players = players,
   })
   return room, code
@@ -130,6 +179,9 @@ function CMD.room_closed(room, uids)
   if info then
     if info.code then codes[info.code] = nil end
     rooms[room] = nil
+    if info.mode == "bot" then
+      ensureBotRooms() -- keep the showcase tables running
+    end
   end
   return true
 end
@@ -140,4 +192,11 @@ skynet.start(function()
     skynet.retpack(CMD[cmd](...))
   end)
   skynet.register ".hub"
+  botRoomTarget = tonumber(skynet.getenv "bot_rooms") or 0
+  if botRoomTarget > 0 then
+    skynet.fork(function()
+      skynet.sleep(10)
+      ensureBotRooms()
+    end)
+  end
 end)

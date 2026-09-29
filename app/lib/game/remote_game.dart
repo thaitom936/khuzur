@@ -63,6 +63,7 @@ class RemoteGameController extends GameController {
   /// Coin winnings by seat, from the game_end push.
   Map<int, int> winnings = {};
   int stake = 0;
+  bool locked = false;
 
   /// True when watching someone else's game (snapshot with you = -1).
   bool get spectating => humanSeat < 0;
@@ -152,6 +153,7 @@ class RemoteGameController extends GameController {
     turnDeadline = null;
     winnings = {};
     stake = 0;
+    locked = false;
     notifyListeners();
   }
 
@@ -207,6 +209,7 @@ class RemoteGameController extends GameController {
         numPlayers = msg['size'] as int? ?? numPlayers;
         roomCode = msg['code'] as String?;
         stake = msg['stake'] as int? ?? 0;
+        locked = msg['locked'] as bool? ?? false;
         if (msg['config'] is Map) {
           config = RuleConfig.fromJson((msg['config'] as Map).cast());
         }
@@ -310,6 +313,7 @@ class RemoteGameController extends GameController {
         roomCode = msg['code'] as String?;
         numPlayers = msg['size'] as int? ?? numPlayers;
         stake = msg['stake'] as int? ?? stake;
+        locked = msg['locked'] as bool? ?? locked;
         seats = _parseSeats(msg['seats'] as List? ?? []);
         started = false;
       default:

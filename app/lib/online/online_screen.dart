@@ -18,8 +18,6 @@ import '../style/my_button.dart';
 import '../style/palette.dart';
 import '../style/responsive_screen.dart';
 
-const stakes = [0, 100, 500, 2000];
-
 class OnlineScreen extends StatefulWidget {
   const OnlineScreen({super.key});
 
@@ -126,21 +124,15 @@ class _OnlineScreenState extends State<OnlineScreen> {
     if (mounted) setState(() => _state = s);
   }
 
-  void _quickMatch(int stake) => _run(() async {
-        await context.read<Session>().client
-            .call('quick_match', {'stake': stake});
-        _setLobbyState(_LobbyState.queueing);
-      });
-
   void _cancelMatch() => _run(() async {
         await context.read<Session>().client.call('cancel_match');
         await context.read<Session>().refreshCoins();
         _setLobbyState(_LobbyState.lobby);
       });
 
-  void _createRoom(int size, int stake) => _run(() async {
-        await context.read<Session>().client
-            .call('create_room', {'size': size, 'stake': stake});
+  void _createRoom(int size, int stake, bool locked) => _run(() async {
+        await context.read<Session>().client.call('create_room',
+            {'size': size, 'stake': stake, 'locked': locked});
         _setLobbyState(_LobbyState.waitingRoom);
       });
 
@@ -238,11 +230,6 @@ class _OnlineScreenState extends State<OnlineScreen> {
               child: Text(l('resumeGame')),
             ),
           ],
-          const SizedBox(height: 12),
-          MyButton(
-            onPressed: () => _stakeSheet(l, (stake) => _quickMatch(stake)),
-            child: Text(l('quickMatch')),
-          ),
           const SizedBox(height: 12),
           MyButton(
             onPressed: () => _sizeDialog(l),
@@ -363,7 +350,9 @@ class _OnlineScreenState extends State<OnlineScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('${l('roomCode')}: ${game.roomCode ?? '…'}',
+          Text(
+              '${game.locked ? '🔒 ' : ''}${l('roomCode')}: '
+              '${game.roomCode ?? '…'}',
               style: Theme.of(context).textTheme.headlineMedium),
           if (game.stake > 0) Text('${l('stake')}: ${game.stake}'),
           const SizedBox(height: 12),
@@ -414,52 +403,40 @@ class _OnlineScreenState extends State<OnlineScreen> {
     );
   }
 
-  void _stakeSheet(L l, void Function(int stake) onPicked) {
-    final coins = context.read<Session>().user?.coins ?? 0;
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(l('stake'),
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            for (final stake in stakes)
-              ListTile(
-                enabled: stake <= coins,
-                title: Text(stake == 0 ? l('casual') : '$stake'),
-                leading: Icon(stake == 0 ? Icons.sports_esports : Icons.paid),
-                onTap: () {
-                  Navigator.pop(context);
-                  onPicked(stake);
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _sizeDialog(L l) {
+    var locked = false;
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l('players')),
-        content: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            for (var n = 2; n <= 5; n++)
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _stakeSheet(l, (stake) => _createRoom(n, stake));
-                },
-                child: Text('$n'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: Text(l('players')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  for (var n = 2; n <= 5; n++)
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        // Coin tables are off for now: stake is always 0.
+                        _createRoom(n, 0, locked);
+                      },
+                      child: Text('$n'),
+                    ),
+                ],
               ),
-          ],
+              SwitchListTile(
+                dense: true,
+                title: Text(l('lockedRoom')),
+                subtitle:
+                    Text(l('lockedHint'), style: const TextStyle(fontSize: 11)),
+                value: locked,
+                onChanged: (v) => setDialog(() => locked = v),
+              ),
+            ],
+          ),
         ),
       ),
     );

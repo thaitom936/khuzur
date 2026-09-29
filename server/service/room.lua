@@ -8,6 +8,7 @@ local bot = require "rules.bot"
 
 local mode, size, code
 local stake = 0 -- per-player entry fee, escrowed by the agents
+local locked = false -- kept off the lobby list; join by code/invite only
 local cfg = engine.defaultConfig()
 local players = {}   -- seat(1-based) -> {uid,name,agent,fd,bot,online,auto,misses}
 local started = false
@@ -94,6 +95,7 @@ local function snapshot(seat)
     code = code,
     size = size,
     stake = stake,
+    locked = locked,
     round = roundNo,
     phase = st and st.phase,
     turn = st and st.turn - 1,
@@ -398,6 +400,7 @@ function CMD.info()
     mode = mode,
     stake = stake,
     size = size,
+    locked = locked,
     started = started,
     seated = #players,
     bots = bots,
@@ -424,6 +427,7 @@ function CMD.init(opts)
   size = opts.size
   code = opts.code
   stake = opts.stake or 0
+  locked = opts.locked or false
   for _, p in ipairs(opts.players) do
     players[#players + 1] = {
       uid = p.uid, name = p.name, agent = p.agent, fd = p.fd,
@@ -433,7 +437,7 @@ function CMD.init(opts)
   if mode == "quick" or #players == size then
     startGame()
   else
-    broadcast { push = "room_update", code = code, size = size, stake = stake, seats = seatInfos() }
+    broadcast { push = "room_update", code = code, size = size, stake = stake, locked = locked, seats = seatInfos() }
   end
   return true
 end
@@ -470,7 +474,7 @@ function CMD.join(p)
     uid = p.uid, name = p.name, agent = p.agent, fd = p.fd,
     bot = false, online = true, misses = 0,
   }
-  broadcast { push = "room_update", code = code, size = size, stake = stake, seats = seatInfos() }
+  broadcast { push = "room_update", code = code, size = size, stake = stake, locked = locked, seats = seatInfos() }
   if #players == size then startGame() end
   return true
 end
@@ -488,7 +492,7 @@ function CMD.leave(uid)
     skynet.send(".hub", "lua", "room_closed", skynet.self(), {})
     skynet.timeout(10, function() skynet.exit() end)
   else
-    broadcast { push = "room_update", code = code, size = size, stake = stake, seats = seatInfos() }
+    broadcast { push = "room_update", code = code, size = size, stake = stake, locked = locked, seats = seatInfos() }
   end
   return true
 end

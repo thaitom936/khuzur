@@ -474,6 +474,42 @@ local function scenario_room_list_and_sit()
   websocket.close(w2.id)
 end
 
+local function scenario_locked_room()
+  local a = connect("KA")
+  local b = connect("KB")
+  local ra = a:call { cmd = "login", device = "e2e-device-k-aa", name = "Ka" }
+  local rb = b:call { cmd = "login", device = "e2e-device-k-bb", name = "Kb" }
+  check(not (ra.err or rb.err), "locked logins failed")
+
+  local cr = a:call { cmd = "create_room", size = 2, locked = true }
+  check(not cr.err and cr.code, "create locked: " .. tostring(cr.err))
+
+  -- Locked rooms are invisible in the lobby list...
+  local r = b:call { cmd = "room_list" }
+  for _, room in ipairs(r.rooms) do
+    check(room.code ~= cr.code, "locked room leaked into the list")
+  end
+
+  -- ...but joinable by code (e.g. via an invite).
+  r = b:call { cmd = "join_room", code = cr.code }
+  check(not r.err, "join locked by code: " .. tostring(r.err))
+  a:waitPush("game_start")
+  b:waitPush("game_start")
+  local done = 0
+  local function drive(cl)
+    skynet.fork(function()
+      cl:playUntilGameEnd()
+      done = done + 1
+    end)
+  end
+  drive(a)
+  drive(b)
+  while done < 2 do skynet.sleep(10) end
+  skynet.error("E2E locked_room OK")
+  websocket.close(a.id)
+  websocket.close(b.id)
+end
+
 ---------------------------------------------------------------- boot & run
 
 skynet.start(function()
@@ -499,6 +535,7 @@ skynet.start(function()
     scenario_coins_and_daily()
     scenario_spectate_and_replay()
     scenario_room_list_and_sit()
+    scenario_locked_room()
   end)
   if ok and not failed then
     skynet.error("E2E PASS")

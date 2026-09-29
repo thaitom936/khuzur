@@ -79,6 +79,8 @@ const _table = <String, Map<String, String>>{
   'sit': {'en': 'Sit', 'mn': 'Суух', 'zh': '坐下'},
   'inProgress': {'en': 'Round %s', 'mn': '%s-р үе', 'zh': '第 %s 局'},
   'noRooms': {'en': 'No open tables', 'mn': 'Нээлттэй ширээ алга', 'zh': '暂无房间'},
+  'lockedRoom': {'en': 'Private room', 'mn': 'Хаалттай өрөө', 'zh': '私密房间'},
+  'lockedHint': {'en': 'Hidden from the lobby; join by code or invite', 'mn': 'Жагсаалтад харагдахгүй; код эсвэл урилгаар орно', 'zh': '不在大厅显示，仅凭房号或邀请加入'},
   'spectating': {'en': 'Spectating', 'mn': 'Үзэж байна', 'zh': '观战中'},
   'replays': {'en': 'Replays', 'mn': 'Бичлэгүүд', 'zh': '对局回放'},
   'noReplays': {'en': 'No replays yet', 'mn': 'Одоогоор бичлэг алга', 'zh': '暂无回放'},

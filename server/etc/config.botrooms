@@ -1,8 +1,8 @@
--- e2e test config: fast timers, separate port and redis db
+-- bot-room keeper test: fast timers, 2 showcase rooms
 root = "./"
 thread = 4
 harbor = 0
-start = "test_e2e"
+start = "test_botrooms"
 bootstrap = "snlua bootstrap"
 logger = nil
 logpath = "."
@@ -13,14 +13,8 @@ lua_path = root.."lualib/?.lua;"..root.."skynet/lualib/?.lua;"..root.."skynet/lu
 lua_cpath = root.."skynet/luaclib/?.so"
 cpath = root.."skynet/cservice/?.so"
 
-ws_port = 9611
+ws_port = 9621
 agent_pool = 2
-
-mysql_host = "127.0.0.1"
-mysql_port = 3306
-mysql_db = "khuzur"
-mysql_user = "khuzur"
-mysql_password = "khuzur_dev_2026"
 
 redis_host = "127.0.0.1"
 redis_port = 6379
@@ -29,10 +23,10 @@ redis_db = 2
 timeout_decide = 100
 timeout_exchange = 100
 timeout_play = 100
-bot_delay = 5
-round_pause = 10
+bot_delay = 15
+round_pause = 30
 quick_size = 4
-match_min_humans = 1 -- tests exercise the bot-fill path
+match_min_humans = 1
 match_fill_after = 20
-stakes_enabled = "true" -- coin scenarios still covered by e2e
-bot_rooms = 0 -- keep the lobby deterministic in tests
+stakes_enabled = "false"
+bot_rooms = 2
