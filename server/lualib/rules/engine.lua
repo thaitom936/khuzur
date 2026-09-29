@@ -43,7 +43,7 @@ function M.defaultConfig()
     mustOvertrump = false, -- any trump will do when void
     mustPlayAtScore = 1,
     minPlayers = 2,
-    dealerTakesTrump = false,
+    dealerTakesTrump = true, -- the dealer may trade a card for the face-up trump
     maxExchange = 5,
   }
 end
@@ -99,7 +99,7 @@ function M.newRound(args)
   end
 
   if not config.decidePhase then
-    -- Everyone plays; skip straight to exchanging (or the swap/play).
+    -- Everyone plays; skip straight to exchanging (or playing).
     for _, p in ipairs(state.players) do
       p.decision = "play"
     end
@@ -107,13 +107,13 @@ function M.newRound(args)
       state.phase = "exchanging"
       -- turn is already the seat left of the dealer.
     else
-      M.enterPlayOrSwap(state)
+      M.startPlaying(state)
     end
   end
   return state
 end
 
-local function startPlaying(state)
+function M.startPlaying(state)
   state.phase = "playing"
   state.trickNo = 1
   state.trick = {}
@@ -123,27 +123,6 @@ local function startPlaying(state)
     s = s % state.numPlayers + 1
   end
   state.turn = s
-end
-
---- After the exchanges: if an active player holds the trump seven they
---- get one chance to swap it for the face-up trump card, then play
---- starts (顺序: 发牌→参与→换牌→7换主牌).
-function M.enterPlayOrSwap(state)
-  local seven = state.trumpSuit * 16 + 7
-  if state.trumpCard ~= seven then
-    for seat, p in ipairs(state.players) do
-      if p.decision == "play" then
-        for _, c in ipairs(p.hand) do
-          if c == seven then
-            state.phase = "swapping"
-            state.turn = seat
-            return
-          end
-        end
-      end
-    end
-  end
-  startPlaying(state)
 end
 
 --- Shuffles the 32-card deck and creates a round: 5 cards each, one
@@ -245,30 +224,27 @@ function M.decide(state, seat, play)
   return true
 end
 
---- Phase "swapping": trade the trump seven for the face-up trump card,
---- then play begins.
-function M.swapTrump(state, seat)
-  local ok, err = checkTurn(state, "swapping", seat)
+--- Dealer privilege (庄可以换翻的主牌): on the dealer's exchange turn,
+--- trade any one hand card for the face-up trump card. The trump SUIT
+--- stays what was flipped at the deal. Once per round, before the
+--- dealer's stock exchange.
+function M.takeTrump(state, seat, cardStr)
+  local ok, err = checkTurn(state, "exchanging", seat)
   if not ok then return nil, err end
-  local seven = state.trumpSuit * 16 + 7
+  if not state.config.dealerTakesTrump then return nil, "not_allowed" end
+  if seat ~= state.dealer then return nil, "not_dealer" end
+  if state.trumpTaken then return nil, "already_taken" end
+  local card = M.parseCard(cardStr)
   local p = state.players[seat]
   for i, c in ipairs(p.hand) do
-    if c == seven then
+    if c == card then
       p.hand[i] = state.trumpCard
-      state.trumpCard = seven
-      startPlaying(state)
+      state.trumpCard = card
+      state.trumpTaken = true
       return true
     end
   end
-  return nil, "no_trump_seven"
-end
-
---- Phase "swapping": keep the seven; play begins.
-function M.skipSwap(state, seat)
-  local ok, err = checkTurn(state, "swapping", seat)
-  if not ok then return nil, err end
-  startPlaying(state)
-  return true
+  return nil, "card_not_in_hand"
 end
 
 --- Phase "exchanging": discard `cards` (list of card strings, may be empty)
@@ -308,7 +284,7 @@ function M.exchange(state, seat, cards)
   if nxt then
     state.turn = nxt
   else
-    M.enterPlayOrSwap(state)
+    M.startPlaying(state)
   end
   return true
 end

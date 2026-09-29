@@ -12,8 +12,30 @@ import '../rules/card.dart';
 import '../rules/rules.dart';
 
 abstract class Bot {
+  const Bot();
+
   /// Phase deciding: true to play, false to (try to) pass.
   bool decidePlay(GameState state, int seat);
+
+  /// Dealer's trade for the face-up trump: the card to give up, or null.
+  String? chooseTrumpTake(GameState state, int seat) {
+    // Taking a trump for the weakest off-trump card is always good.
+    int? worst;
+    int? low;
+    for (final c in state.players[seat].hand) {
+      if (suitOf(c) != state.trumpSuit &&
+          (worst == null || rankOf(c) < rankOf(worst))) {
+        worst = c;
+      }
+      if (low == null || rankOf(c) < rankOf(low)) low = c;
+    }
+    if (worst != null) return cardString(worst);
+    // All trumps: only upgrade the lowest one.
+    if (low != null && rankOf(state.trumpCard) > rankOf(low)) {
+      return cardString(low);
+    }
+    return null;
+  }
 
   /// Phase exchanging: card strings to discard (already limited by the
   /// stock size and maxExchange).
@@ -23,7 +45,7 @@ abstract class Bot {
   String choosePlay(GameState state, int seat);
 }
 
-class EasyBot implements Bot {
+class EasyBot extends Bot {
   final Random _rng;
 
   EasyBot([Random? rng]) : _rng = rng ?? Random();
@@ -41,7 +63,7 @@ class EasyBot implements Bot {
   }
 }
 
-class NormalBot implements Bot {
+class NormalBot extends Bot {
   const NormalBot();
 
   @override

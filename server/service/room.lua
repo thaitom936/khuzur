@@ -101,6 +101,8 @@ local function snapshot(seat)
     turn = st and st.turn - 1,
     dealer = st and dealerSeat - 1,
     trump = st and engine.cardString(st.trumpCard),
+    trump_suit = st and st.trumpSuit,
+    trump_taken = st and st.trumpTaken or false,
     stock = st and #st.stock,
     trickNo = st and st.trickNo,
     trick = st and trickWire(),
@@ -129,7 +131,7 @@ local announceTurn -- forward
 
 local function phaseActive()
   return st and (st.phase == "deciding" or st.phase == "exchanging"
-    or st.phase == "swapping" or st.phase == "playing")
+    or st.phase == "playing")
 end
 
 local function guard(id, fn)
@@ -168,6 +170,7 @@ local function startRound(prevScores)
       round = roundNo,
       dealer = dealerSeat - 1,
       trump = curRound.trump,
+      trump_suit = st.trumpSuit,
       stock = #st.stock,
       hand = allHands[i],
       scores = curRound.scores,
@@ -179,6 +182,7 @@ local function startRound(prevScores)
       round = roundNo,
       dealer = dealerSeat - 1,
       trump = curRound.trump,
+      trump_suit = st.trumpSuit,
       stock = #st.stock,
       scores = curRound.scores,
     })
@@ -321,18 +325,16 @@ local function botAct()
     recordAction(seat, "d", play)
     broadcast { push = "decided", seat = seat - 1, play = play }
     postAction()
-  elseif st.phase == "swapping" then
-    -- Swapping the trump seven for the face-up card is always worth it.
-    if engine.swapTrump(st, seat) then
-      recordAction(seat, "t", true)
-      broadcast { push = "trump_swapped", seat = seat - 1,
-        trump = engine.cardString(st.trumpCard) }
-    else
-      engine.skipSwap(st, seat)
-      recordAction(seat, "s", true)
-    end
-    postAction()
   elseif st.phase == "exchanging" then
+    -- The dealer bot may first trade a weak card for the face-up trump.
+    if seat == st.dealer and not st.trumpTaken then
+      local give = bot.chooseTrumpTake(st, seat)
+      if give and engine.takeTrump(st, seat, give) then
+        recordAction(seat, "k", give)
+        broadcast { push = "trump_taken", seat = seat - 1,
+          trump = engine.cardString(st.trumpCard) }
+      end
+    end
     local cards = bot.chooseExchange(st, seat)
     if not engine.exchange(st, seat, cards) then
       cards = {}
@@ -361,8 +363,7 @@ announceTurn = function()
   turnId = turnId + 1
   local id = turnId
   local timeout = st.phase == "deciding" and T.decide
-    or (st.phase == "exchanging" or st.phase == "swapping") and T.exchange
-    or T.play
+    or st.phase == "exchanging" and T.exchange or T.play
   deadline = skynet.now() + timeout
   broadcast {
     push = "turn",
@@ -561,22 +562,15 @@ function CMD.action(uid, msg)
       broadcast { push = "decided", seat = seat - 1, play = msg.play and true or false }
       postAction()
     end
-  elseif msg.cmd == "swap_trump" then
-    local ok, e = engine.swapTrump(st, seat)
+  elseif msg.cmd == "take_trump" then
+    local ok, e = engine.takeTrump(st, seat, msg.card)
     err = not ok and e or nil
     if not err then
-      recordAction(seat, "t", true)
-      broadcast { push = "trump_swapped", seat = seat - 1,
+      recordAction(seat, "k", msg.card)
+      broadcast { push = "trump_taken", seat = seat - 1,
         trump = engine.cardString(st.trumpCard) }
       push(p, { push = "exchange_result", hand = handStrings(seat) })
-      postAction()
-    end
-  elseif msg.cmd == "skip_swap" then
-    local ok, e = engine.skipSwap(st, seat)
-    err = not ok and e or nil
-    if not err then
-      recordAction(seat, "s", true)
-      postAction()
+      -- The turn does not advance: the dealer still exchanges.
     end
   elseif msg.cmd == "exchange" then
     local cards = msg.cards or {}

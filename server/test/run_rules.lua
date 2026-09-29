@@ -133,10 +133,8 @@ local function runCase(case)
       local ok, err
       if step.decide then
         ok, err = engine.decide(state, step.decide.seat + 1, step.decide.play)
-      elseif step.swap then
-        ok, err = engine.swapTrump(state, step.swap.seat + 1)
-      elseif step.skip then
-        ok, err = engine.skipSwap(state, step.skip.seat + 1)
+      elseif step.take then
+        ok, err = engine.takeTrump(state, step.take.seat + 1, step.take.card)
       elseif step.exchange then
         ok, err = engine.exchange(state, step.exchange.seat + 1, step.exchange.cards)
       elseif step.play then

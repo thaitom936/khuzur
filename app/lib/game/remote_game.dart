@@ -64,6 +64,10 @@ class RemoteGameController extends GameController {
   Map<int, int> winnings = {};
   int stake = 0;
   bool locked = false;
+  bool trumpTaken = false;
+
+  /// Fixed at the deal; the dealer's trade never changes the trump suit.
+  int trumpSuit = 2;
 
   /// True when watching someone else's game (snapshot with you = -1).
   bool get spectating => humanSeat < 0;
@@ -133,7 +137,6 @@ class RemoteGameController extends GameController {
       turn == humanSeat &&
       (phase == Phase.deciding ||
           phase == Phase.exchanging ||
-          phase == Phase.swapping ||
           phase == Phase.playing);
 
   @override
@@ -145,7 +148,7 @@ class RemoteGameController extends GameController {
 
   @override
   List<int> legalCards() =>
-      legalCardsFor(config, suitOf(trumpCard), trick, hand);
+      legalCardsFor(config, trumpSuit, trick, hand);
 
   // ---- actions ----
 
@@ -191,10 +194,15 @@ class RemoteGameController extends GameController {
   }
 
   @override
-  void swapTrump() => _send('swap_trump');
+  void takeTrump(String card) => _send('take_trump', {'card': card});
 
   @override
-  void skipSwap() => _send('skip_swap');
+  bool get canTakeTrump =>
+      humanTurn &&
+      phase == Phase.exchanging &&
+      humanSeat == dealer &&
+      !trumpTaken &&
+      config.dealerTakesTrump;
 
   @override
   void sendChat(int phraseId) => _send('chat', {'phrase': phraseId});
@@ -234,7 +242,6 @@ class RemoteGameController extends GameController {
   static const _phases = {
     'deciding': Phase.deciding,
     'exchanging': Phase.exchanging,
-    'swapping': Phase.swapping,
     'playing': Phase.playing,
     'round_end': Phase.roundEnd,
     'game_end': Phase.gameEnd,
@@ -306,6 +313,8 @@ class RemoteGameController extends GameController {
           dealer = msg['dealer'] as int? ?? dealer;
           if (msg['trump'] is String) {
             trumpCard = parseCard(msg['trump'] as String);
+            trumpSuit = msg['trump_suit'] as int? ?? suitOf(trumpCard);
+            trumpTaken = msg['trump_taken'] == true;
           }
           stockCount = msg['stock'] as int? ?? 0;
           trick = [
@@ -329,6 +338,8 @@ class RemoteGameController extends GameController {
         roundNo = msg['round'] as int;
         dealer = msg['dealer'] as int;
         trumpCard = parseCard(msg['trump'] as String);
+        trumpSuit = msg['trump_suit'] as int? ?? suitOf(trumpCard);
+        trumpTaken = false;
         stockCount = msg['stock'] as int;
         // Spectators receive public round updates without private cards.
         hand = [
@@ -363,8 +374,9 @@ class RemoteGameController extends GameController {
         stockCount = (stockCount - count).clamp(0, 32);
       case 'exchange_result':
         hand = [for (final c in msg['hand'] as List) parseCard(c as String)];
-      case 'trump_swapped':
+      case 'trump_taken':
         trumpCard = parseCard(msg['trump'] as String);
+        trumpTaken = true;
       case 'played':
         final seat = msg['seat'] as int;
         final card = parseCard(msg['card'] as String);

@@ -18,6 +18,27 @@ function M.decidePlay(state, seat)
   return strength >= 3
 end
 
+--- Dealer's trade for the face-up trump: the card to give up, or nil.
+--- Taking a trump for our weakest off-trump card is always good.
+function M.chooseTrumpTake(state, seat)
+  local worst
+  for _, c in ipairs(state.players[seat].hand) do
+    if suitOf(c) ~= state.trumpSuit then
+      if not worst or rankOf(c) < rankOf(worst) then worst = c end
+    end
+  end
+  if worst then return engine.cardString(worst) end
+  -- All trumps: only upgrade the lowest one.
+  local low
+  for _, c in ipairs(state.players[seat].hand) do
+    if not low or rankOf(c) < rankOf(low) then low = c end
+  end
+  if low and rankOf(state.trumpCard) > rankOf(low) then
+    return engine.cardString(low)
+  end
+  return nil
+end
+
 --- Phase exchanging: list of card strings to discard.
 function M.chooseExchange(state, seat)
   -- Discard weak off-trump cards (below queen), lowest first.

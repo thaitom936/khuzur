@@ -68,10 +68,9 @@ void _runCase(Map<String, dynamic> c) {
       if (step.containsKey('decide')) {
         final a = step['decide'] as Map<String, dynamic>;
         err = state.decide(a['seat'] as int, a['play'] as bool);
-      } else if (step.containsKey('swap')) {
-        err = state.swapTrump((step['swap'] as Map)['seat'] as int);
-      } else if (step.containsKey('skip')) {
-        err = state.skipSwap((step['skip'] as Map)['seat'] as int);
+      } else if (step.containsKey('take')) {
+        final a = step['take'] as Map<String, dynamic>;
+        err = state.takeTrump(a['seat'] as int, a['card'] as String);
       } else if (step.containsKey('exchange')) {
         final a = step['exchange'] as Map<String, dynamic>;
         err = state.exchange(a['seat'] as int, _strings(a['cards']));
@@ -89,7 +88,6 @@ void _runCase(Map<String, dynamic> c) {
 const _phaseNames = {
   Phase.deciding: 'deciding',
   Phase.exchanging: 'exchanging',
-  Phase.swapping: 'swapping',
   Phase.playing: 'playing',
   Phase.roundEnd: 'round_end',
   Phase.gameEnd: 'game_end',

@@ -36,7 +36,7 @@ class RuleConfig {
     this.mustOvertrump = false,
     this.mustPlayAtScore = 1,
     this.minPlayers = 2,
-    this.dealerTakesTrump = false,
+    this.dealerTakesTrump = true,
     this.maxExchange = 5,
   });
 
@@ -59,7 +59,7 @@ class RuleConfig {
   }
 }
 
-enum Phase { deciding, exchanging, swapping, playing, roundEnd, gameEnd }
+enum Phase { deciding, exchanging, playing, roundEnd, gameEnd }
 
 enum Decision { none, play, pass }
 
@@ -150,7 +150,11 @@ class GameState {
   int trickNo = 0;
   List<int>? winners;
 
-  int get trumpSuit => suitOf(trumpCard);
+  /// Fixed at the deal; the dealer taking the face-up card never
+  /// changes the trump suit.
+  final int trumpSuit;
+
+  bool trumpTaken = false;
 
   GameState._({
     required this.config,
@@ -159,7 +163,8 @@ class GameState {
     required this.players,
     required this.trumpCard,
     required this.stock,
-  }) : turn = (dealer + 1) % numPlayers;
+  })  : trumpSuit = suitOf(trumpCard),
+        turn = (dealer + 1) % numPlayers;
 
   /// Creates the state for one round from explicit cards (card strings).
   factory GameState.newRound({
@@ -208,7 +213,7 @@ class GameState {
         state.phase = Phase.exchanging;
         // turn is already the seat left of the dealer.
       } else {
-        state._enterPlayOrSwap();
+        state._startPlaying();
       }
     }
     return state;
@@ -219,24 +224,6 @@ class GameState {
     trickNo = 1;
     trick = [];
     turn = _findSeat(_nextSeat(dealer), (q) => q.decision == Decision.play)!;
-  }
-
-  /// After the exchanges: if an active player holds the trump seven they
-  /// get one chance to swap it for the face-up trump card, then play
-  /// starts (顺序: 发牌→参与→换牌→7换主牌).
-  void _enterPlayOrSwap() {
-    final seven = trumpSuit * 16 + 7;
-    if (trumpCard != seven) {
-      for (var seat = 0; seat < numPlayers; seat++) {
-        final p = players[seat];
-        if (p.decision == Decision.play && p.hand.contains(seven)) {
-          phase = Phase.swapping;
-          turn = seat;
-          return;
-        }
-      }
-    }
-    _startPlaying();
   }
 
   int _nextSeat(int seat) => (seat + 1) % numPlayers;
@@ -287,26 +274,22 @@ class GameState {
     return null;
   }
 
-  /// Phase [Phase.swapping]: trade the trump seven for the face-up trump
-  /// card, then play begins.
-  String? swapTrump(int seat) {
-    final err = _checkTurn(Phase.swapping, seat);
+  /// Dealer privilege (庄可以换翻的主牌): on the dealer's exchange
+  /// turn, trade any one hand card for the face-up trump card. The trump
+  /// SUIT stays what was flipped at the deal. Once per round.
+  String? takeTrump(int seat, String cardStr) {
+    final err = _checkTurn(Phase.exchanging, seat);
     if (err != null) return err;
-    final seven = trumpSuit * 16 + 7;
+    if (!config.dealerTakesTrump) return 'not_allowed';
+    if (seat != dealer) return 'not_dealer';
+    if (trumpTaken) return 'already_taken';
+    final card = parseCard(cardStr);
     final p = players[seat];
-    final i = p.hand.indexOf(seven);
-    if (i < 0) return 'no_trump_seven';
+    final i = p.hand.indexOf(card);
+    if (i < 0) return 'card_not_in_hand';
     p.hand[i] = trumpCard;
-    trumpCard = seven;
-    _startPlaying();
-    return null;
-  }
-
-  /// Phase [Phase.swapping]: keep the seven; play begins.
-  String? skipSwap(int seat) {
-    final err = _checkTurn(Phase.swapping, seat);
-    if (err != null) return err;
-    _startPlaying();
+    trumpCard = card;
+    trumpTaken = true;
     return null;
   }
 
@@ -337,7 +320,7 @@ class GameState {
     if (next != null) {
       turn = next;
     } else {
-      _enterPlayOrSwap();
+      _startPlaying();
     }
     return null;
   }

@@ -601,8 +601,9 @@ class _TableViewState extends State<TableView> {
     } else if (game.humanTurn) {
       status = switch (game.phase) {
         Phase.deciding => l('decideHint'),
-        Phase.exchanging => l.fmt('exchangeHint', game.maxExchangeNow),
-        Phase.swapping => l('swapHint'),
+        Phase.exchanging => game.canTakeTrump
+            ? l('takeHint')
+            : l.fmt('exchangeHint', game.maxExchangeNow),
         Phase.playing => l('yourTurn') + _countdown(game),
         _ => '',
       };
@@ -610,7 +611,6 @@ class _TableViewState extends State<TableView> {
         game.turn < game.seats.length &&
         (game.phase == Phase.deciding ||
             game.phase == Phase.exchanging ||
-            game.phase == Phase.swapping ||
             game.phase == Phase.playing)) {
       status =
           l.fmt('thinking', _seatName(game, l, game.turn)) + _countdown(game);
@@ -756,41 +756,35 @@ class _TableViewState extends State<TableView> {
           ],
         );
       case Phase.exchanging:
-        return _tableButton(
-          onPressed: () {
-            audio.playSfx(SfxType.buttonTap);
-            game.exchange(_selected.map(rules.cardString).toList());
-            setState(_selected.clear);
-          },
-          child: Text(
-            _selected.isEmpty
-                ? l('keepAll')
-                : '${l('exchangeN')} ${_selected.length}',
-          ),
-        );
-      case Phase.swapping:
-        // Rule: after the exchanges, the trump-seven holder may trade it
-        // for the face-up trump card.
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Dealer privilege: trade the selected card for the face-up
+            // trump (庄可以换翻的主牌).
+            if (game.canTakeTrump && _selected.length == 1) ...[
+              _tableButton(
+                onPressed: () {
+                  audio.playSfx(SfxType.buttonTap);
+                  game.takeTrump(rules.cardString(_selected.first));
+                  setState(_selected.clear);
+                },
+                child: Text('${l('takeTrumpBtn')} '
+                    '${rankLabel(game.trumpCard)}${suitSymbols[rules.suitOf(game.trumpCard)]}'),
+              ),
+              const SizedBox(height: 12),
+            ],
             _tableButton(
               onPressed: () {
                 audio.playSfx(SfxType.buttonTap);
-                game.swapTrump();
+                game.exchange(_selected.map(rules.cardString).toList());
+                setState(_selected.clear);
               },
-              child: Text('${l('swapSeven')} '
-                  '${rankLabel(game.trumpCard)}${suitSymbols[rules.suitOf(game.trumpCard)]}'),
-            ),
-            const SizedBox(height: 12),
-            _tableButton(
-              danger: true,
-              onPressed: () {
-                audio.playSfx(SfxType.buttonTap);
-                game.skipSwap();
-              },
-              child: Text(l('keepSeven')),
+              child: Text(
+                _selected.isEmpty
+                    ? l('keepAll')
+                    : '${l('exchangeN')} ${_selected.length}',
+              ),
             ),
           ],
         );

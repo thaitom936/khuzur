@@ -80,20 +80,15 @@ abstract class GameController extends ChangeNotifier {
   void exchange(List<String> cards);
   void play(String card);
 
-  /// Swap phase: trade the trump seven for the face-up trump card.
-  void swapTrump() {}
-
-  /// Swap phase: keep the seven instead.
-  void skipSwap() {}
+  /// Dealer privilege: trade [card] for the face-up trump card
+  /// (own exchange turn only).
+  void takeTrump(String card) {}
   void nextRound() {}
   void sendChat(int phraseId) {}
   void setAuto(bool on) {}
 
-  /// Whether the swap decision is ours right now.
-  bool get canSwapTrump =>
-      humanTurn &&
-      phase == Phase.swapping &&
-      hand.contains(suitOf(trumpCard) * 16 + 7);
+  /// Whether the dealer trade is available to us right now.
+  bool get canTakeTrump => false;
 }
 
 enum TableMotionKind { deal, play, returnCard, collect, reset }

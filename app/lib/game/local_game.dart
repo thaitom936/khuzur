@@ -112,7 +112,6 @@ class LocalGameController extends GameController {
   bool get _phaseActive =>
       state.phase == Phase.deciding ||
       state.phase == Phase.exchanging ||
-      state.phase == Phase.swapping ||
       state.phase == Phase.playing;
 
   /// Whether the human may pass right now (mirrors the engine's checks so
@@ -150,20 +149,18 @@ class LocalGameController extends GameController {
   }
 
   @override
-  void swapTrump() {
-    if (!humanTurn) return;
-    if (state.swapTrump(humanSeat) == null) {
-      notifyListeners();
-      _runBots();
-    }
-  }
+  bool get canTakeTrump =>
+      humanTurn &&
+      state.phase == Phase.exchanging &&
+      humanSeat == state.dealer &&
+      !state.trumpTaken &&
+      config.dealerTakesTrump;
 
   @override
-  void skipSwap() {
+  void takeTrump(String card) {
     if (!humanTurn) return;
-    if (state.skipSwap(humanSeat) == null) {
-      notifyListeners();
-      _runBots();
+    if (state.takeTrump(humanSeat, card) == null) {
+      notifyListeners(); // the turn continues: the dealer still exchanges
     }
   }
 
@@ -261,12 +258,12 @@ class LocalGameController extends GameController {
         } else if (state.decide(seat, false) != null) {
           state.decide(seat, true); // passing was illegal, forced to play
         }
-      case Phase.swapping:
-        // Swapping the trump seven for the face-up card is always worth it.
-        if (state.swapTrump(seat) != null) {
-          state.skipSwap(seat);
-        }
       case Phase.exchanging:
+        // The dealer bot may first trade a weak card for the face-up trump.
+        if (seat == state.dealer && !state.trumpTaken) {
+          final give = _bot.chooseTrumpTake(state, seat);
+          if (give != null) state.takeTrump(seat, give);
+        }
         final cards = _bot.chooseExchange(state, seat);
         if (state.exchange(seat, cards) != null) {
           state.exchange(seat, const []);
