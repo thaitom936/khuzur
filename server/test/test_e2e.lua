@@ -405,6 +405,75 @@ local function scenario_spectate_and_replay()
   websocket.close(w.id)
 end
 
+local function scenario_room_list_and_sit()
+  local a = connect("LA")
+  local b = connect("LB")
+  local w2 = connect("LW")
+  local ra = a:call { cmd = "login", device = "e2e-device-l-aa", name = "La" }
+  local rb = b:call { cmd = "login", device = "e2e-device-l-bb", name = "Lb" }
+  local rw = w2:call { cmd = "login", device = "e2e-device-l-ww", name = "Lw" }
+  check(not (ra.err or rb.err or rw.err), "list logins failed")
+
+  -- A creates a 3-seat free room; it shows up in the list.
+  local cr = a:call { cmd = "create_room", size = 3 }
+  check(not cr.err, "create: " .. tostring(cr.err))
+  local r = b:call { cmd = "room_list" }
+  check(not r.err, "room_list: " .. tostring(r.err))
+  local entry
+  for _, room in ipairs(r.rooms) do
+    if room.code == cr.code then entry = room end
+  end
+  check(entry and entry.seated == 1 and entry.size == 3
+    and entry.started == false, "room missing from list")
+
+  -- A starts early: two bot seats. The list now shows a running room.
+  r = a:call { cmd = "start_room" }
+  check(not r.err, "start_room: " .. tostring(r.err))
+  a:waitPush("game_start")
+  r = b:call { cmd = "room_list" }
+  local running
+  for _, room in ipairs(r.rooms) do
+    if room.code == cr.code then running = room end
+  end
+  check(running and running.started == true and running.bots == 2,
+    "running room not listed with bots")
+
+  -- B sits down mid-game on a bot seat and gets a proper snapshot.
+  r = b:call { cmd = "join_room", code = cr.code }
+  check(not r.err, "sit: " .. tostring(r.err))
+  local snap = b:waitPush("snapshot")
+  check(snap.you >= 0 and snap.hand and #snap.seats == 3, "bad sit snapshot")
+
+  -- W watches by room code.
+  r = w2:call { cmd = "watch", code = cr.code }
+  check(not r.err, "watch by code: " .. tostring(r.err))
+  local wsnap = w2:waitPush("snapshot")
+  check(wsnap.you == -1, "bad watcher snapshot")
+
+  -- Play it out: both seated humans drive to the end.
+  local done = 0
+  local function drive(cl)
+    skynet.fork(function()
+      cl:playUntilGameEnd()
+      done = done + 1
+    end)
+  end
+  drive(a)
+  drive(b)
+  while done < 2 do skynet.sleep(10) end
+
+  -- The finished room disappears from the list.
+  skynet.sleep(30)
+  r = b:call { cmd = "room_list" }
+  for _, room in ipairs(r.rooms) do
+    check(room.code ~= cr.code, "closed room still listed")
+  end
+  skynet.error("E2E room_list_and_sit OK")
+  websocket.close(a.id)
+  websocket.close(b.id)
+  websocket.close(w2.id)
+end
+
 ---------------------------------------------------------------- boot & run
 
 skynet.start(function()
@@ -429,6 +498,7 @@ skynet.start(function()
     scenario_friends_and_invite()
     scenario_coins_and_daily()
     scenario_spectate_and_replay()
+    scenario_room_list_and_sit()
   end)
   if ok and not failed then
     skynet.error("E2E PASS")

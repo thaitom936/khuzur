@@ -385,7 +385,26 @@ end
 ---------------------------------------------------------------- commands
 
 function CMD.info()
-  return { stake = stake, started = started, code = code }
+  local names = {}
+  local bots = 0
+  for i, p in ipairs(players) do
+    names[i] = p.name
+    if p.bot then bots = bots + 1 end
+  end
+  local watcherCount = 0
+  for _ in pairs(watchers) do watcherCount = watcherCount + 1 end
+  return {
+    code = code,
+    mode = mode,
+    stake = stake,
+    size = size,
+    started = started,
+    seated = #players,
+    bots = bots,
+    watchers = watcherCount,
+    names = names,
+    round = roundNo,
+  }
 end
 
 --- Adds a spectator; they get every broadcast but never any hand.
@@ -420,7 +439,32 @@ function CMD.init(opts)
 end
 
 function CMD.join(p)
-  if started then return nil, "already_started" end
+  if started then
+    -- Sitting down mid-game: take over a bot seat (free tables only,
+    -- so the pot stays consistent).
+    if stake > 0 then return nil, "already_started" end
+    local seat
+    for i, q in ipairs(players) do
+      if q.bot then seat = i break end
+    end
+    if not seat then return nil, "room_full" end
+    players[seat] = {
+      uid = p.uid, name = p.name, agent = p.agent, fd = p.fd,
+      bot = false, online = true, misses = 0,
+    }
+    -- (hub.join_room registers uid -> room after this call returns.)
+    -- Everyone sees the new seating; each viewer gets their own snapshot.
+    for i, q in ipairs(players) do
+      push(q, snapshot(i))
+    end
+    for _, w in pairs(watchers) do
+      push(w, snapshot(nil))
+    end
+    if phaseActive() and st.turn == seat then
+      announceTurn() -- restart this turn's timer as a human turn
+    end
+    return true
+  end
   if #players >= size then return nil, "room_full" end
   players[#players + 1] = {
     uid = p.uid, name = p.name, agent = p.agent, fd = p.fd,

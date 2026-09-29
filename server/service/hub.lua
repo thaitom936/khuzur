@@ -53,12 +53,28 @@ function CMD.push_to(uid, msg)
   return true
 end
 
---- Pre-join info about a friend room (for stake escrow).
+--- Live info about a room by code (stake escrow, lobby list).
 function CMD.room_info(code)
   local room = codes[code]
   if not room then return nil, "room_not_found" end
-  local info = rooms[room]
-  return { stake = info.stake or 0, size = info.size }
+  local ok, info = pcall(skynet.call, room, "lua", "info")
+  if not ok then return nil, "room_not_found" end
+  return info
+end
+
+function CMD.room_addr(code)
+  return codes[code]
+end
+
+--- All rooms for the lobby list.
+function CMD.room_list()
+  local out = {}
+  for room in pairs(rooms) do
+    local ok, info = pcall(skynet.call, room, "lua", "info")
+    if ok and info then out[#out + 1] = info end
+  end
+  table.sort(out, function(a, b) return a.code < b.code end)
+  return out
 end
 
 local function newCode()
@@ -73,11 +89,9 @@ end
 --- passes the full table incl. bots; friend rooms start with the creator).
 function CMD.create_room(mode, size, players, stake)
   local room = skynet.newservice("room")
-  local code
-  if mode == "friend" then
-    code = newCode()
-    codes[code] = room
-  end
+  -- Every room gets a code so the lobby list can address it.
+  local code = newCode()
+  codes[code] = room
   rooms[room] = { mode = mode, code = code, stake = stake or 0, size = size }
   for _, p in ipairs(players) do
     if p.uid then uid_room[p.uid] = room end

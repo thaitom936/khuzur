@@ -34,6 +34,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
   String? _error;
   RemoteGameController? _game;
   StreamSubscription? _pushSub;
+  List<Map<String, dynamic>> _rooms = [];
 
   @override
   void initState() {
@@ -52,10 +53,27 @@ class _OnlineScreenState extends State<OnlineScreen> {
     try {
       await session.ensureOnline();
       await session.refreshCoins();
+      await _loadRooms();
     } on NetException catch (e) {
       if (mounted) setState(() => _error = e.code);
     }
   }
+
+  Future<void> _loadRooms() async {
+    try {
+      final resp = await context.read<Session>().client.call('room_list');
+      if (!mounted) return;
+      setState(() => _rooms =
+          (resp['rooms'] as List? ?? []).cast<Map<String, dynamic>>());
+    } on NetException {
+      // The lobby still works without the list.
+    }
+  }
+
+  void _watchRoom(String code) => _run(() async {
+        await context.read<Session>().client.call('watch', {'code': code});
+        // The snapshot push navigates to the table via _onGame.
+      });
 
   void _onPush(Map<String, dynamic> msg) {
     if (msg['push'] == 'invite' && mounted) {
@@ -238,6 +256,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
             child: Text(l('friends')),
           ),
           const SizedBox(height: 12),
+          _roomList(l),
+          const SizedBox(height: 12),
           MyButton(
             onPressed: () => GoRouter.of(context).push('/online/replays'),
             child: Text(l('replays')),
@@ -247,6 +267,67 @@ class _OnlineScreenState extends State<OnlineScreen> {
             onPressed: () => GoRouter.of(context).push('/online/rank'),
             child: Text(l('leaderboard')),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _roomList(L l) {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(l('rooms'),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 18),
+              onPressed: _loadRooms,
+            ),
+          ],
+        ),
+        if (_rooms.isEmpty)
+          Text(l('noRooms'), style: const TextStyle(fontSize: 12))
+        else
+          for (final room in _rooms) _roomRow(l, room),
+      ],
+    );
+  }
+
+  Widget _roomRow(L l, Map<String, dynamic> room) {
+    final code = room['code'] as String;
+    final started = room['started'] == true;
+    final stake = room['stake'] as int? ?? 0;
+    final seated = room['seated'] as int? ?? 0;
+    final size = room['size'] as int? ?? 0;
+    final bots = room['bots'] as int? ?? 0;
+    final names = (room['names'] as List? ?? []).join(' · ');
+    // Sit on a free pre-start seat, or take over a bot in a free table.
+    final canSit =
+        started ? (bots > 0 && stake == 0) : (seated < size);
+
+    return ListTile(
+      dense: true,
+      title: Text('#$code  $names'),
+      subtitle: Text([
+        '$seated/$size',
+        if (stake > 0) '${l('stake')}: $stake',
+        if (started) l.fmt('inProgress', room['round'] ?? ''),
+        if ((room['watchers'] as int? ?? 0) > 0) '👁 ${room['watchers']}',
+      ].join(' · ')),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (canSit)
+            TextButton(
+              onPressed: () => _joinRoom(code),
+              child: Text(l('sit')),
+            ),
+          if (started)
+            TextButton(
+              onPressed: () => _watchRoom(code),
+              child: Text(l('watch')),
+            ),
         ],
       ),
     );

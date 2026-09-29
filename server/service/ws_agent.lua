@@ -152,15 +152,21 @@ HANDLERS.join_room = authed(function(fd, c, msg)
   local code = tostring(msg.code or "")
   local info, ierr = skynet.call(".hub", "lua", "room_info", code)
   if not info then return nil, ierr end
-  local ok, err = escrow(c.uid, info.stake)
+  -- Mid-game sits are free-table only; nothing to escrow then.
+  local fee = info.started and 0 or info.stake
+  local ok, err = escrow(c.uid, fee)
   if not ok then return nil, err end
   local room, jerr = skynet.call(".hub", "lua", "join_room",
     code, playerEntry(fd, c))
   if not room then
-    refund(c.uid, info.stake)
+    refund(c.uid, fee)
     return nil, jerr
   end
   return {}
+end)
+
+HANDLERS.room_list = authed(function(fd, c, msg)
+  return { rooms = skynet.call(".hub", "lua", "room_list") }
 end)
 
 HANDLERS.leave_room = authed(function(fd, c, msg)
@@ -212,10 +218,15 @@ end)
 
 ---------------------------------------------------------------- spectate
 
---- Watches the ongoing game of a friend.
+--- Watches an ongoing game, by friend uid or by room code.
 HANDLERS.watch = authed(function(fd, c, msg)
-  local fuid = tonumber(msg.uid)
-  local room = fuid and skynet.call(".hub", "lua", "room_of", fuid)
+  local room
+  if msg.code then
+    room = skynet.call(".hub", "lua", "room_addr", tostring(msg.code))
+  else
+    local fuid = tonumber(msg.uid)
+    room = fuid and skynet.call(".hub", "lua", "room_of", fuid)
+  end
   if not room then return nil, "not_in_room" end
   skynet.call(room, "lua", "watch",
     { uid = c.uid, agent = skynet.self(), fd = fd })
