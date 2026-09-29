@@ -478,6 +478,15 @@ skynet.start(function()
       local r = mysql:query(sql)
       if r.err then error(r.err) end
     end
+    -- CREATE TABLE IF NOT EXISTS does not upgrade existing user tables.
+    local columns = mysql:query("SHOW COLUMNS FROM user LIKE 'coins'")
+    if columns.err then error(columns.err) end
+    if not columns[1] then
+      local r = mysql:query(
+        "ALTER TABLE user ADD COLUMN coins INT NOT NULL DEFAULT 1000")
+      if r.err then error(r.err) end
+      skynet.error("[db] migrated user.coins")
+    end
   end)
   if not ok then
     mysql = nil

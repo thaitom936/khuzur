@@ -1,0 +1,5 @@
+include "config"
+
+-- Windows host address, supplied by run.sh for Docker Desktop in WSL NAT mode.
+mysql_host = "$DB_HOST"
+redis_host = "$DB_HOST"

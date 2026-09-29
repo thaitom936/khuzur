@@ -426,10 +426,28 @@ local function scenario_room_list_and_sit()
   check(entry and entry.seated == 1 and entry.size == 3
     and entry.started == false, "room missing from list")
 
+  -- Entering a waiting room is spectator-only and must not occupy a seat.
+  r = b:call { cmd = "watch", code = cr.code }
+  check(not r.err, "watch waiting room: " .. tostring(r.err))
+  local waiting = b:waitPush("snapshot")
+  check(waiting.you == -1 and waiting.started == false and not waiting.hand,
+    "waiting watcher received player state")
+  r = b:call { cmd = "room_list" }
+  for _, room in ipairs(r.rooms) do
+    if room.code == cr.code then
+      check(room.seated == 1 and room.watchers == 1, "watcher occupied a seat")
+    end
+  end
+
   -- A starts early: two bot seats. The list now shows a running room.
   r = a:call { cmd = "start_room" }
   check(not r.err, "start_room: " .. tostring(r.err))
   a:waitPush("game_start")
+  local watching = b:waitPush("snapshot")
+  check(watching.you == -1 and watching.started == true and not watching.hand,
+    "waiting watcher did not transition to the started game")
+  local publicRound = b:waitPush("round_start")
+  check(not publicRound.hand, "private cards leaked to spectator")
   r = b:call { cmd = "room_list" }
   local running
   for _, room in ipairs(r.rooms) do
@@ -443,6 +461,14 @@ local function scenario_room_list_and_sit()
   check(not r.err, "sit: " .. tostring(r.err))
   local snap = b:waitPush("snapshot")
   check(snap.you >= 0 and snap.hand and #snap.seats == 3, "bad sit snapshot")
+  r = b:call { cmd = "room_list" }
+  for _, room in ipairs(r.rooms) do
+    if room.code == cr.code then
+      check(room.watchers == 0 and room.bots == 1,
+        "new player retained spectator membership")
+    end
+  end
+  check(b.you >= 0, "spectator snapshot overwrote the seated player")
 
   -- W watches by room code.
   r = w2:call { cmd = "watch", code = cr.code }
@@ -512,6 +538,32 @@ end
 
 ---------------------------------------------------------------- boot & run
 
+local function scenario_sit_while_waiting()
+  local a, b = connect("waiting-host"), connect("waiting-viewer")
+  check(not a:call { cmd = "login", device = "waiting-host-device" }.err, "host login")
+  check(not b:call { cmd = "login", device = "waiting-viewer-device" }.err, "viewer login")
+  local cr = a:call { cmd = "create_room", size = 3 }
+  check(not cr.err, "create waiting room")
+  check(not b:call { cmd = "watch", code = cr.code }.err, "watch waiting room")
+  local snap = b:waitPush("snapshot")
+  check(snap.you == -1 and snap.started == false, "waiting spectator identity")
+  check(not b:call { cmd = "join_room", code = cr.code }.err, "sit while waiting")
+  snap = b:waitPush("snapshot")
+  check(snap.you == 1 and snap.started == false and #snap.seats == 2,
+    "waiting spectator did not become a seated player")
+  local list = b:call { cmd = "room_list" }
+  for _, room in ipairs(list.rooms) do
+    if room.code == cr.code then
+      check(room.watchers == 0 and room.seated == 2, "waiting seat count")
+    end
+  end
+  check(not b:call { cmd = "leave_room" }.err, "viewer leaves waiting room")
+  check(not a:call { cmd = "leave_room" }.err, "host leaves waiting room")
+  websocket.close(a.id)
+  websocket.close(b.id)
+  skynet.error("E2E sit_while_waiting OK")
+end
+
 skynet.start(function()
   skynet.uniqueservice("db")
   skynet.uniqueservice("hub")
@@ -527,6 +579,7 @@ skynet.start(function()
   end)
 
   local ok, err = pcall(function()
+    scenario_sit_while_waiting()
     scenario_join_bad_room()
     scenario_resume_token()
     scenario_quick_match_with_bots()

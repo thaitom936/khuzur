@@ -381,6 +381,8 @@ local function startGame()
       config = cfg,
     })
   end
+  -- Waiting-room spectators must also learn that the game has started.
+  for _, w in pairs(watchers) do push(w, snapshot(nil)) end
   startRound(nil)
 end
 
@@ -452,6 +454,8 @@ function CMD.join(p)
       if q.bot then seat = i break end
     end
     if not seat then return nil, "room_full" end
+    -- A seated user must no longer receive the spectator snapshot afterwards.
+    watchers[p.uid] = nil
     players[seat] = {
       uid = p.uid, name = p.name, agent = p.agent, fd = p.fd,
       bot = false, online = true, misses = 0,
@@ -470,11 +474,13 @@ function CMD.join(p)
     return true
   end
   if #players >= size then return nil, "room_full" end
+  watchers[p.uid] = nil
   players[#players + 1] = {
     uid = p.uid, name = p.name, agent = p.agent, fd = p.fd,
     bot = false, online = true, misses = 0,
   }
   broadcast { push = "room_update", code = code, size = size, stake = stake, locked = locked, seats = seatInfos() }
+  push(players[#players], snapshot(#players))
   if #players == size then startGame() end
   return true
 end

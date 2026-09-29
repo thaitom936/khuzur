@@ -27,6 +27,13 @@ class SeatView {
 }
 
 abstract class GameController extends ChangeNotifier {
+  /// Presentation events are separate from authoritative rule state. A snapshot
+  /// resets motion; ordinary turn/score notifications never replay animations.
+  TableMotionEvent? tableMotion;
+  List<int> get displayHand => hand;
+  List<TrickCard> get displayTrick => completedTrick ?? trick;
+  bool get playPending => false;
+
   int get numPlayers;
   int get humanSeat;
   int get roundNo;
@@ -74,4 +81,13 @@ abstract class GameController extends ChangeNotifier {
   void nextRound() {}
   void sendChat(int phraseId) {}
   void setAuto(bool on) {}
+}
+
+enum TableMotionKind { deal, play, returnCard, reset }
+
+class TableMotionEvent {
+  final TableMotionKind kind;
+  final TrickCard? card;
+
+  TableMotionEvent(this.kind, [this.card]);
 }

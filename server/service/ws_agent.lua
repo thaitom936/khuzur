@@ -168,6 +168,12 @@ HANDLERS.join_room = authed(function(fd, c, msg)
     refund(c.uid, fee)
     return nil, jerr
   end
+  if c.watching then
+    if c.watching ~= room then
+      skynet.send(c.watching, "lua", "unwatch", c.uid)
+    end
+    c.watching = nil
+  end
   return {}
 end)
 
@@ -226,6 +232,7 @@ end)
 
 --- Watches an ongoing game, by friend uid or by room code.
 HANDLERS.watch = authed(function(fd, c, msg)
+  if roomOf(c.uid) then return nil, "already_in_room" end
   local room
   if msg.code then
     room = skynet.call(".hub", "lua", "room_addr", tostring(msg.code))
@@ -234,6 +241,10 @@ HANDLERS.watch = authed(function(fd, c, msg)
     room = fuid and skynet.call(".hub", "lua", "room_of", fuid)
   end
   if not room then return nil, "not_in_room" end
+  if c.watching and c.watching ~= room then
+    -- The previously watched table may already have finished and exited.
+    pcall(skynet.call, c.watching, "lua", "unwatch", c.uid)
+  end
   skynet.call(room, "lua", "watch",
     { uid = c.uid, agent = skynet.self(), fd = fd })
   c.watching = room

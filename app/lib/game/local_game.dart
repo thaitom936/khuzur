@@ -9,8 +9,6 @@ library;
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
-
 import '../bot/bot.dart';
 import '../rules/card.dart';
 import '../rules/deal.dart';
@@ -75,23 +73,23 @@ class LocalGameController extends GameController {
 
   @override
   List<SeatView> get seats => [
-        for (var s = 0; s < numPlayers; s++)
-          SeatView(
-            name: s == humanSeat ? 'You' : 'Bot $s',
-            score: state.players[s].score,
-            tricks: state.players[s].tricks,
-            decision: state.players[s].decision,
-            bot: s != humanSeat,
-          ),
-      ];
+    for (var s = 0; s < numPlayers; s++)
+      SeatView(
+        name: s == humanSeat ? 'You' : 'Bot $s',
+        score: state.players[s].score,
+        tricks: state.players[s].tricks,
+        decision: state.players[s].decision,
+        bot: s != humanSeat,
+      ),
+  ];
 
   LocalGameController({
     this.numPlayers = 4,
     this.config = const RuleConfig(),
     Bot? bot,
     Random? random,
-  })  : _bot = bot ?? const NormalBot(),
-        _rng = random ?? Random.secure() {
+  }) : _bot = bot ?? const NormalBot(),
+       _rng = random ?? Random.secure() {
     dealer = _rng.nextInt(numPlayers);
     _deal(List.filled(numPlayers, config.startScore));
     _runBots();
@@ -105,6 +103,7 @@ class LocalGameController extends GameController {
       config: config,
       random: _rng,
     );
+    tableMotion = TableMotionEvent(TableMotionKind.deal);
   }
 
   @override
@@ -122,8 +121,9 @@ class LocalGameController extends GameController {
     if (state.players[humanSeat].score <= config.mustPlayAtScore) return false;
     final undecidedAfter =
         state.players.where((p) => p.decision == Decision.none).length - 1;
-    final playCount =
-        state.players.where((p) => p.decision == Decision.play).length;
+    final playCount = state.players
+        .where((p) => p.decision == Decision.play)
+        .length;
     return playCount + undecidedAfter >= config.minPlayers;
   }
 
@@ -173,13 +173,20 @@ class LocalGameController extends GameController {
   /// Plays a card and, when this completes a trick, records it (plus the
   /// winner) for display and schedules the display to clear.
   String? _playCard(int seat, String card) {
-    final playCount =
-        state.players.where((p) => p.decision == Decision.play).length;
+    final playCount = state.players
+        .where((p) => p.decision == Decision.play)
+        .length;
     final completing = state.trick.length == playCount - 1;
     final before = completing ? [...state.trick] : null;
     final tricksBefore = [for (final p in state.players) p.tricks];
 
     final err = state.play(seat, card);
+    if (err == null) {
+      tableMotion = TableMotionEvent(
+        TableMotionKind.play,
+        TrickCard(seat, parseCard(card)),
+      );
+    }
     if (err == null && completing) {
       completedTrick = [...before!, TrickCard(seat, parseCard(card))];
       for (var s = 0; s < numPlayers; s++) {

@@ -68,6 +68,18 @@ class RemoteGameController extends GameController {
   /// True when watching someone else's game (snapshot with you = -1).
   bool get spectating => humanSeat < 0;
 
+  bool get canTakeSeat =>
+      spectating &&
+      !gameOver &&
+      (started
+          ? stake == 0 && seats.any((seat) => seat.bot)
+          : seats.length < numPlayers);
+
+  Future<void> takeSeat() async {
+    if (!canTakeSeat || roomCode == null) throw NetException('room_full');
+    await session.client.call('join_room', {'code': roomCode});
+  }
+
   void unwatch() {
     _send('unwatch');
     reset();
@@ -83,6 +95,32 @@ class RemoteGameController extends GameController {
   bool suspended = false;
   bool _canPassNow = false;
   bool _disposed = false;
+  TrickCard? _pendingPlay;
+  bool _awaitingPlayTurn = false;
+  String? playError;
+  int playErrorVersion = 0;
+
+  @override
+  bool get playPending => _pendingPlay != null || _awaitingPlayTurn;
+
+  @override
+  List<int> get displayHand => [
+    for (final card in hand)
+      if (card != _pendingPlay?.card) card,
+  ];
+
+  @override
+  List<TrickCard> get displayTrick => [
+    ...(_pendingPlay == null ? super.displayTrick : trick),
+    ?_pendingPlay,
+  ];
+
+  void _resetMotion() {
+    _pendingPlay = null;
+    _awaitingPlayTurn = false;
+    playError = null;
+    tableMotion = TableMotionEvent(TableMotionKind.reset);
+  }
 
   @override
   bool get isLocal => false;
@@ -91,6 +129,7 @@ class RemoteGameController extends GameController {
   bool get humanTurn =>
       started &&
       !gameOver &&
+      !playPending &&
       turn == humanSeat &&
       (phase == Phase.deciding ||
           phase == Phase.exchanging ||
@@ -124,7 +163,31 @@ class RemoteGameController extends GameController {
   void exchange(List<String> cards) => _send('exchange', {'cards': cards});
 
   @override
-  void play(String card) => _send('play_card', {'card': card});
+  void play(String card) {
+    if (!humanTurn || phase != Phase.playing) return;
+    final value = parseCard(card);
+    if (!hand.contains(value)) return;
+    final pending = TrickCard(humanSeat, value);
+    _pendingPlay = pending;
+    playError = null;
+    tableMotion = TableMotionEvent(TableMotionKind.play, pending);
+    notifyListeners(); // Render immediately; the request never blocks motion.
+    _submitPlay(card, pending);
+  }
+
+  Future<void> _submitPlay(String card, TrickCard pending) async {
+    try {
+      await session.client.call('play_card', {'card': card});
+      // The played push commits state. An ACK alone must not add a second card.
+    } catch (error) {
+      if (_disposed || !identical(_pendingPlay, pending)) return;
+      _pendingPlay = null;
+      playError = error is NetException ? error.code : 'generic';
+      playErrorVersion++;
+      tableMotion = TableMotionEvent(TableMotionKind.returnCard, pending);
+      notifyListeners();
+    }
+  }
 
   @override
   void sendChat(int phraseId) => _send('chat', {'phrase': phraseId});
@@ -136,6 +199,8 @@ class RemoteGameController extends GameController {
 
   /// Clears table state after a finished game, back in the lobby.
   void reset() {
+    _resetMotion();
+    humanSeat = 0;
     started = false;
     gameOver = false;
     suspended = false;
@@ -186,8 +251,14 @@ class RemoteGameController extends GameController {
     ];
   }
 
-  void _updateSeat(int seat,
-      {int? score, int? tricks, Decision? decision, bool? online, bool? auto}) {
+  void _updateSeat(
+    int seat, {
+    int? score,
+    int? tricks,
+    Decision? decision,
+    bool? online,
+    bool? auto,
+  }) {
     if (seat < 0 || seat >= seats.length) return;
     final s = seats[seat];
     seats[seat] = SeatView(
@@ -205,6 +276,10 @@ class RemoteGameController extends GameController {
     if (_disposed) return;
     switch (msg['push'] as String) {
       case 'game_start' || 'snapshot':
+        _resetMotion();
+        completedTrick = null;
+        completedTrickWinner = null;
+        suspended = false;
         humanSeat = msg['you'] as int? ?? humanSeat;
         numPlayers = msg['size'] as int? ?? numPlayers;
         roomCode = msg['code'] as String?;
@@ -230,7 +305,8 @@ class RemoteGameController extends GameController {
               TrickCard(t['seat'] as int, parseCard(t['card'] as String)),
           ];
           hand = [
-            for (final c in (msg['hand'] as List? ?? [])) parseCard(c as String),
+            for (final c in (msg['hand'] as List? ?? []))
+              parseCard(c as String),
           ];
           final dl = msg['deadline'] as int?;
           turnDeadline = dl == null
@@ -238,27 +314,42 @@ class RemoteGameController extends GameController {
               : DateTime.now().add(Duration(milliseconds: dl * 10));
         }
       case 'round_start':
+        _resetMotion();
+        tableMotion = TableMotionEvent(TableMotionKind.deal);
+        phase = Phase.deciding;
+        started = true;
         roundNo = msg['round'] as int;
         dealer = msg['dealer'] as int;
         trumpCard = parseCard(msg['trump'] as String);
         stockCount = msg['stock'] as int;
-        hand = [for (final c in msg['hand'] as List) parseCard(c as String)];
+        // Spectators receive public round updates without private cards.
+        hand = [
+          for (final c in msg['hand'] as List? ?? []) parseCard(c as String),
+        ];
         trick = [];
         completedTrick = null;
         completedTrickWinner = null;
         final scoreList = (msg['scores'] as List).cast<int>();
         for (var s = 0; s < scoreList.length; s++) {
-          _updateSeat(s, score: scoreList[s], tricks: 0, decision: Decision.none);
+          _updateSeat(
+            s,
+            score: scoreList[s],
+            tricks: 0,
+            decision: Decision.none,
+          );
         }
       case 'turn':
+        _awaitingPlayTurn = false;
         turn = msg['seat'] as int;
         phase = _phases[msg['phase']] ?? phase;
         _canPassNow = msg['can_pass'] as bool? ?? true;
         final dl = msg['deadline'] as int? ?? 0;
         turnDeadline = DateTime.now().add(Duration(milliseconds: dl * 10));
       case 'decided':
-        _updateSeat(msg['seat'] as int,
-            decision: msg['play'] == true ? Decision.play : Decision.pass);
+        _updateSeat(
+          msg['seat'] as int,
+          decision: msg['play'] == true ? Decision.play : Decision.pass,
+        );
       case 'exchanged':
         final count = msg['count'] as int? ?? 0;
         stockCount = (stockCount - count).clamp(0, 32);
@@ -267,6 +358,19 @@ class RemoteGameController extends GameController {
       case 'played':
         final seat = msg['seat'] as int;
         final card = parseCard(msg['card'] as String);
+        final predicted =
+            _pendingPlay?.seat == seat && _pendingPlay?.card == card;
+        if (seat == humanSeat) {
+          if (_pendingPlay != null && !predicted) _resetMotion();
+          _pendingPlay = null;
+          _awaitingPlayTurn = true;
+        }
+        if (!predicted) {
+          tableMotion = TableMotionEvent(
+            TableMotionKind.play,
+            TrickCard(seat, card),
+          );
+        }
         trick = [...trick, TrickCard(seat, card)];
         if (seat == humanSeat) hand = [...hand]..remove(card);
       case 'trick_end':
@@ -284,8 +388,11 @@ class RemoteGameController extends GameController {
       case 'round_end':
         phase = Phase.roundEnd;
         for (final r in (msg['results'] as List).cast<Map<String, dynamic>>()) {
-          _updateSeat(r['seat'] as int,
-              score: r['score'] as int, tricks: r['tricks'] as int);
+          _updateSeat(
+            r['seat'] as int,
+            score: r['score'] as int,
+            tricks: r['tricks'] as int,
+          );
         }
       case 'game_end':
         phase = Phase.gameEnd;
@@ -298,8 +405,11 @@ class RemoteGameController extends GameController {
         };
       case 'seat_state':
         final seat = msg['seat'] as int;
-        _updateSeat(seat,
-            online: msg['online'] as bool?, auto: msg['auto'] as bool?);
+        _updateSeat(
+          seat,
+          online: msg['online'] as bool?,
+          auto: msg['auto'] as bool?,
+        );
         if (seat == humanSeat) autoPlaying = msg['auto'] == true;
       case 'chat':
         final seat = msg['seat'] as int;

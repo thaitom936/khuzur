@@ -20,6 +20,7 @@ final router = GoRouter(
   routes: [
     GoRoute(
       path: '/',
+      redirect: (context, state) => state.uri.path == '/' ? '/online' : null,
       builder: (context, state) => const MainMenuScreen(key: Key('main menu')),
       routes: [
         GoRoute(

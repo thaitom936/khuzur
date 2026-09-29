@@ -57,23 +57,31 @@ class CardView extends StatelessWidget {
               ? [const BoxShadow(blurRadius: 6, color: Colors.black26)]
               : null,
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              rankLabel(card),
-              style: TextStyle(
-                color: color,
-                fontSize: width * 0.34,
-                fontWeight: FontWeight.bold,
-                height: 1.1,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                rankLabel(card),
+                style: TextStyle(
+                  color: color,
+                  fontSize: width * 0.34,
+                  fontWeight: FontWeight.bold,
+                  height: 1.1,
+                ),
               ),
-            ),
-            Text(
-              suitSymbols[suit],
-              style: TextStyle(color: color, fontSize: width * 0.4, height: 1.1),
-            ),
-          ],
+              Text(
+                suitSymbols[suit],
+                style: TextStyle(
+                  color: color,
+                  fontSize: width * 0.4,
+                  height: 1.1,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -96,6 +104,13 @@ class CardBack extends StatelessWidget {
         color: palette.darkPen,
         border: Border.all(color: palette.ink),
         borderRadius: BorderRadius.circular(width * 0.1),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.diamond_outlined,
+          size: width * 0.55,
+          color: palette.trueWhite.withValues(alpha: 0.45),
+        ),
       ),
     );
   }

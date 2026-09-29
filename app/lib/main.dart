@@ -88,29 +88,46 @@ class MyApp extends StatelessWidget {
             return ValueListenableBuilder(
               valueListenable: settings.lang,
               builder: (context, lang, child) => MaterialApp.router(
-              title: 'Muushig',
-              theme:
-                  ThemeData.from(
-                    colorScheme: ColorScheme.fromSeed(
-                      seedColor: palette.darkPen,
-                      surface: palette.backgroundMain,
-                    ),
-                    textTheme: TextTheme(
-                      bodyMedium: TextStyle(color: palette.ink),
-                    ),
-                    useMaterial3: true,
-                  ).copyWith(
-                    // Make buttons more fun.
-                    filledButtonTheme: FilledButtonThemeData(
-                      style: FilledButton.styleFrom(
-                        textStyle: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 20,
+                title: 'Muushig',
+                debugShowCheckedModeBanner: false,
+                theme:
+                    ThemeData.from(
+                      colorScheme: ColorScheme.fromSeed(
+                        seedColor: palette.darkPen,
+                        surface: palette.backgroundMain,
+                      ),
+                      textTheme: TextTheme(
+                        bodyMedium: TextStyle(color: palette.ink),
+                      ),
+                      useMaterial3: true,
+                    ).copyWith(
+                      filledButtonTheme: FilledButtonThemeData(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(48, 44),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      outlinedButtonTheme: OutlinedButtonThemeData(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(48, 44),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      textButtonTheme: TextButtonThemeData(
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(48, 44),
                         ),
                       ),
                     ),
-                  ),
-              routerConfig: router,
+                routerConfig: router,
               ),
             );
           },

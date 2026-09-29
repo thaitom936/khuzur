@@ -3,7 +3,7 @@
 /// Wire protocol (see server/service/ws_agent.lua):
 ///   request:  {seq, cmd, ...args}
 ///   response: {seq, cmd, err?, ...data}
-///   push:     {push: "<name>", ...data}
+///   push:     `{push: "<name>", ...data}`
 library;
 
 import 'dart:async';
@@ -60,13 +60,16 @@ class NetClient {
       _channel = channel;
       _sub = channel.stream.listen(_onData,
           onDone: _onDisconnected, onError: (_) => _onDisconnected());
-      state.value = ConnState.online;
       _retries = 0;
       _pingTimer = Timer.periodic(pingInterval, (_) {
         call('ping', {'t': DateTime.now().millisecondsSinceEpoch})
             .catchError((_) => <String, dynamic>{});
       });
       await onConnected?.call();
+      // Enable actions only once session authentication has succeeded.
+      if (!_closed && identical(_channel, channel)) {
+        state.value = ConnState.online;
+      }
     } catch (_) {
       _onDisconnected();
     }

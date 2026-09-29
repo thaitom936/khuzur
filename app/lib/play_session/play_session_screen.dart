@@ -20,7 +20,11 @@ import '../rules/rules.dart';
 import '../style/confetti.dart';
 import '../style/my_button.dart';
 import '../style/palette.dart';
+import '../style/player_avatar.dart';
 import 'card_widget.dart';
+import 'spectator_controls.dart';
+import 'table_motion.dart';
+import 'turn_countdown_avatar.dart';
 
 /// Single-player entry: owns a fresh [LocalGameController].
 class PlaySessionScreen extends StatelessWidget {
@@ -60,6 +64,7 @@ class _TableViewState extends State<TableView> {
   final Set<int> _selected = {};
   Phase? _lastPhase;
   Timer? _clock;
+  int _shownPlayError = 0;
 
   @override
   void initState() {
@@ -83,6 +88,19 @@ class _TableViewState extends State<TableView> {
     final palette = context.watch<Palette>();
     final game = context.watch<GameController>();
     final l = L.of(context);
+    if (game is RemoteGameController &&
+        game.playErrorVersion != _shownPlayError) {
+      _shownPlayError = game.playErrorVersion;
+      final error = game.playError;
+      if (error != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${l('cardReturned')} ${l.error(error)}')),
+          );
+        });
+      }
+    }
 
     if (game.phase != _lastPhase) {
       _lastPhase = game.phase;
@@ -92,40 +110,80 @@ class _TableViewState extends State<TableView> {
     final isReplay = game is ReplayController;
     final spectating = game is RemoteGameController && game.spectating;
 
+    if (game is RemoteGameController && game.spectating && !game.started) {
+      return Scaffold(
+        backgroundColor: palette.backgroundMain,
+        appBar: AppBar(
+          title: Text(l('waitingFriends')),
+          leading: IconButton(
+            tooltip: l('back'),
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => _leave(game),
+          ),
+        ),
+        body: ListView(
+          children: [
+            for (final seat in game.seats)
+              ListTile(
+                leading: PlayerAvatar(name: seat.name),
+                title: Text(seat.name),
+              ),
+          ],
+        ),
+        bottomNavigationBar: SafeArea(child: SpectatorControls(game: game)),
+      );
+    }
+
     return Scaffold(
       backgroundColor: palette.backgroundPlaySession,
       body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
+        child: _tableViewport(
+          replay: isReplay,
+          child: CardTableMotion(
+            game: game,
+            builder: (context, motion) => Stack(
               children: [
-                _topBar(game, l),
-                if (spectating)
-                  Text(l('spectating'),
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                _opponents(game, l),
-                Expanded(child: _center(game, l)),
-                if (game.autoPlaying) _autoBanner(game, l),
-                _seatPanelRow(game, l),
-                _hand(game),
-                SizedBox(
-                  height: 96,
-                  child: Center(
-                    child: isReplay
-                        ? _replayControls(game)
-                        : _actions(game, l),
-                  ),
-                ),
+                _tableLayout(game, l, motion),
+                if (!isReplay &&
+                    !motion.animating &&
+                    game.phase == Phase.roundEnd)
+                  _roundEndOverlay(game, l),
+                if (!isReplay &&
+                    !spectating &&
+                    !motion.animating &&
+                    game.phase == Phase.gameEnd)
+                  _gameEndOverlay(game, l),
               ],
             ),
-            if (!isReplay && game.phase == Phase.roundEnd)
-              _roundEndOverlay(game, l),
-            if (!isReplay && !spectating && game.phase == Phase.gameEnd)
-              _gameEndOverlay(game, l),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _tableViewport({required bool replay, required Widget child}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Keep cards and actions readable in short windows instead of letting
+        // the centre overflow into the player's hand when they sit down.
+        final minimumHeight =
+            (replay ? 920.0 : 820.0) *
+            MediaQuery.textScalerOf(context).scale(1).clamp(1, 2);
+        final table = Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: child,
+          ),
+        );
+        if (constraints.maxHeight >= minimumHeight) return table;
+        return SingleChildScrollView(
+          child: SizedBox(
+            width: constraints.maxWidth,
+            height: minimumHeight,
+            child: table,
+          ),
+        );
+      },
     );
   }
 
@@ -150,8 +208,10 @@ class _TableViewState extends State<TableView> {
         if (game.desyncError != null)
           Padding(
             padding: const EdgeInsets.only(left: 8),
-            child: Text('⚠ ${game.desyncError}',
-                style: const TextStyle(color: Colors.red, fontSize: 11)),
+            child: Text(
+              '⚠ ${game.desyncError}',
+              style: const TextStyle(color: Colors.red, fontSize: 11),
+            ),
           ),
       ],
     );
@@ -174,31 +234,187 @@ class _TableViewState extends State<TableView> {
     }
   }
 
+  Widget _tableLayout(GameController game, L l, CardTableMotionState motion) {
+    final spectating = game is RemoteGameController && game.spectating;
+    final replay = game is ReplayController;
+    final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
+    // Rotate the table around the viewer. Spectators use seat zero as the
+    // bottom anchor, preserving every player's physical position when seated.
+    final anchor = game.humanSeat >= 0 ? game.humanSeat : 0;
+    final others = [
+      for (var i = 1; i < game.seats.length; i++)
+        (anchor + i) % game.seats.length,
+    ];
+    final positions = switch (others.length) {
+      1 => const [Offset(.5, 0)],
+      2 => const [Offset(.75, 0), Offset(.25, 0)],
+      3 => const [Offset(.87, 1), Offset(.5, 0), Offset(.13, 1)],
+      _ => const [
+        Offset(.87, 1),
+        Offset(.75, 0),
+        Offset(.25, 0),
+        Offset(.13, 1),
+      ],
+    };
+    return DefaultTextStyle.merge(
+      style: const TextStyle(color: Colors.white),
+      child: IconTheme(
+        data: const IconThemeData(color: Colors.white),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final seatWidth = (constraints.maxWidth * .26).clamp(80.0, 124.0);
+            final handBottom = spectating || replay ? 74.0 * scale : 18.0;
+            final ownBottom = (spectating ? 18.0 : handBottom) + 108.0 * scale;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned(top: 0, left: 0, right: 0, child: _topBar(game, l)),
+                for (var i = 0; i < others.length; i++)
+                  Positioned(
+                    key: ValueKey('table-seat-${others[i]}'),
+                    left:
+                        constraints.maxWidth * positions[i].dx - seatWidth / 2,
+                    top: positions[i].dy == 0 ? 76 * scale : null,
+                    bottom: positions[i].dy == 1
+                        ? ownBottom + 122 * scale
+                        : null,
+                    width: seatWidth,
+                    child: motion.seat(
+                      others[i],
+                      _seatPanel(game, l, others[i]),
+                    ),
+                  ),
+                Positioned(
+                  top: constraints.maxHeight * .28,
+                  left: 12,
+                  right: 12,
+                  height: 150 * scale,
+                  child: _center(game, l, motion),
+                ),
+                Positioned(
+                  key: const ValueKey('table-stock'),
+                  top: constraints.maxHeight * .49,
+                  left: 12,
+                  child: Semantics(
+                    label: '${l('trump')}, ${l('stock')}: ${game.stockCount}',
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CardView(game.trumpCard, width: 40),
+                        const SizedBox(width: 8),
+                        motion.deck(width: 40, count: game.stockCount),
+                      ],
+                    ),
+                  ),
+                ),
+                if (game.seats.isNotEmpty)
+                  Positioned(
+                    key: ValueKey('table-seat-$anchor'),
+                    left: (constraints.maxWidth - seatWidth) / 2,
+                    bottom: ownBottom,
+                    width: seatWidth,
+                    child: motion.seat(anchor, _seatPanel(game, l, anchor)),
+                  ),
+                if (!game.isLocal && !spectating && !replay)
+                  Positioned(
+                    left: 16,
+                    bottom: ownBottom + 12,
+                    child: IconButton.filled(
+                      tooltip: l('chat'),
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: context
+                            .read<Palette>()
+                            .backgroundPlaySession,
+                      ),
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      onPressed: () => _showChatSheet(game, l),
+                    ),
+                  ),
+                if (!spectating && !replay)
+                  Positioned(
+                    key: const ValueKey('table-actions'),
+                    right: 12,
+                    bottom: ownBottom,
+                    width: seatWidth,
+                    child: IgnorePointer(
+                      ignoring: motion.dealing,
+                      child: _actions(game, l),
+                    ),
+                  ),
+                if (game.autoPlaying)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: ownBottom + 230 * scale,
+                    child: _autoBanner(game, l),
+                  ),
+                Positioned(
+                  key: const ValueKey('table-hand'),
+                  left: 14,
+                  right: 14,
+                  bottom: handBottom,
+                  height: 96,
+                  child: _hand(game, motion),
+                ),
+                if (spectating)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: SpectatorControls(game: game),
+                  ),
+                if (replay)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: _replayControls(game),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _topBar(GameController game, L l) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+    return SizedBox(
+      height: 60 * MediaQuery.textScalerOf(context).scale(1).clamp(1, 2),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back),
+            tooltip: l('back'),
+            icon: const Icon(Icons.arrow_back_ios_new),
             onPressed: () => _leave(game),
           ),
-          Text('${l('round')} ${game.roundNo}'),
-          const Spacer(),
-          Text('${l('trump')}: '),
-          CardView(game.trumpCard, width: 30),
-          const SizedBox(width: 12),
-          Text('${l('stock')}: ${game.stockCount}'),
-          const Spacer(),
-          if (!game.isLocal)
-            IconButton(
-              icon: const Icon(Icons.chat_bubble_outline),
-              onPressed: () => _showChatSheet(game, l),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  game.roomCode == null
+                      ? 'Muushig'
+                      : '${l('tableLabel')} ${game.roomCode}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  '${l('round')} ${game.roundNo}',
+                  style: const TextStyle(fontSize: 11, color: Colors.white70),
+                ),
+              ],
             ),
-          InkResponse(
-            onTap: () => GoRouter.of(context).push('/settings'),
-            child: Image.asset('assets/images/settings.png',
-                semanticLabel: 'Settings', width: 32),
+          ),
+          IconButton(
+            tooltip: l('settings'),
+            icon: const Icon(Icons.more_horiz),
+            onPressed: () => GoRouter.of(context).push('/settings'),
           ),
         ],
       ),
@@ -212,74 +428,111 @@ class _TableViewState extends State<TableView> {
     return s.bot && game.isLocal ? '${l('bot')} $seat' : s.name;
   }
 
-  Widget _opponents(GameController game, L l) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        for (var seat = 0; seat < game.seats.length; seat++)
-          if (seat != game.humanSeat)
-            _seatPanel(game, l, seat),
-      ],
-    );
-  }
-
-  Widget _seatPanelRow(GameController game, L l) {
-    if (game.seats.isEmpty || game.humanSeat < 0) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: _seatPanel(game, l, game.humanSeat),
-    );
-  }
-
   Widget _seatPanel(GameController game, L l, int seat) {
-    final palette = context.watch<Palette>();
     final s = game.seats[seat];
-    final active = game.turn == seat &&
+    final active =
+        game.turn == seat &&
         game.phase != Phase.roundEnd &&
         game.phase != Phase.gameEnd;
-    final badge = switch (s.decision) {
-      Decision.pass => ' · ${l('passed')}',
-      Decision.play => ' · ${s.tricks}▲',
-      Decision.none => '',
-    };
+    final name = game.isLocal ? _seatName(game, l, seat) : s.name;
     final bubble = game.chatBubbles[seat];
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: active ? palette.accept : palette.trueWhite,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: palette.ink.withValues(alpha: 0.4)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        SizedBox(
+          width: 76,
+          height: 62,
+          child: Stack(
             children: [
-              Text(
-                '${_seatName(game, l, seat)}'
-                '${game.dealer == seat ? ' (D)' : ''}'
-                '${s.online ? '' : ' · ${l('offline')}'}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+              Align(
+                alignment: Alignment.topCenter,
+                child: seat == game.humanSeat && game is! ReplayController
+                    ? TurnCountdownAvatar(
+                        name: s.name,
+                        active: game.humanTurn,
+                        deadline: game.turnDeadline,
+                        turnLabel: l('yourTurn'),
+                      )
+                    : AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: active
+                                ? const Color(0xffffd166)
+                                : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                        child: PlayerAvatar(name: s.name, size: 46),
+                      ),
               ),
-              Text('${s.score}$badge'),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .9),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    '${s.score}',
+                    style: const TextStyle(
+                      color: Color(0xff244b43),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+              if (seat == game.dealer)
+                const Positioned(
+                  left: 0,
+                  top: 1,
+                  child: Text(
+                    'D',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
             ],
           ),
         ),
+        const SizedBox(height: 4),
+        Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 13),
+        ),
+        Text(
+          s.decision == Decision.pass
+              ? l('passed')
+              : !s.online && !s.bot
+              ? l('offline')
+              : s.tricks > 0
+              ? '${s.tricks} ▲'
+              : ' ',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 10, color: Colors.white70),
+        ),
         if (bubble != null)
           Container(
-            margin: const EdgeInsets.only(top: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
-              color: palette.trueWhite,
+              color: Colors.white,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
               bubble < l.phrases.length ? l.phrases[bubble] : '…',
-              style: const TextStyle(fontSize: 12),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: Color(0xff244b43)),
             ),
           ),
       ],
@@ -293,11 +546,14 @@ class _TableViewState extends State<TableView> {
     return left > 0 ? ' ($left)' : '';
   }
 
-  Widget _center(GameController game, L l) {
-    final trick = game.completedTrick ?? game.trick;
+  Widget _center(GameController game, L l, CardTableMotionState motion) {
+    final trick = game.displayTrick;
     final String status;
     if (game.completedTrickWinner != null) {
-      status = l.fmt('takesTrick', _seatName(game, l, game.completedTrickWinner!));
+      status = l.fmt(
+        'takesTrick',
+        _seatName(game, l, game.completedTrickWinner!),
+      );
     } else if (game.humanTurn) {
       status = switch (game.phase) {
         Phase.deciding => l('decideHint'),
@@ -320,22 +576,21 @@ class _TableViewState extends State<TableView> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         SizedBox(
-          height: 100,
+          height: 88,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               for (final t in trick)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: _Appear(
-                    key: ValueKey('t${t.seat}-${t.card}'),
-                    child: Column(
-                      children: [
-                        Text(_seatName(game, l, t.seat),
-                            style: const TextStyle(fontSize: 11)),
-                        CardView(t.card, width: 44),
-                      ],
-                    ),
+                  child: Column(
+                    children: [
+                      Text(
+                        _seatName(game, l, t.seat),
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      motion.trickCard(t.card, CardView(t.card, width: 44)),
+                    ],
                   ),
                 ),
             ],
@@ -370,8 +625,8 @@ class _TableViewState extends State<TableView> {
     );
   }
 
-  Widget _hand(GameController game) {
-    final hand = [...game.hand]..sort();
+  Widget _hand(GameController game, CardTableMotionState motion) {
+    final hand = [...game.displayHand]..sort();
     final playing = game.phase == Phase.playing && game.humanTurn;
     final exchanging = game.phase == Phase.exchanging && game.humanTurn;
     final legal = playing ? game.legalCards() : hand;
@@ -384,14 +639,21 @@ class _TableViewState extends State<TableView> {
           for (final card in hand)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: _Appear(
-                key: ValueKey('h$card-${game.roundNo}'),
-                child: CardView(
+              child: motion.handCard(
+                card,
+                CardView(
                   card,
                   selected: _selected.contains(card),
-                  disabled: playing && !legal.contains(card),
-                  onTap: () => _onCardTap(game, card,
-                      playing: playing, exchanging: exchanging),
+                  disabled:
+                      game.playPending || (playing && !legal.contains(card)),
+                  onTap: motion.dealing
+                      ? null
+                      : () => _onCardTap(
+                          game,
+                          card,
+                          playing: playing,
+                          exchanging: exchanging,
+                        ),
                 ),
               ),
             ),
@@ -400,19 +662,17 @@ class _TableViewState extends State<TableView> {
     );
   }
 
-  void _onCardTap(GameController game, int card,
-      {required bool playing, required bool exchanging}) {
+  void _onCardTap(
+    GameController game,
+    int card, {
+    required bool playing,
+    required bool exchanging,
+  }) {
     final audio = context.read<AudioController>();
     if (playing) {
-      if (_selected.contains(card)) {
-        audio.playSfx(SfxType.huhsh);
-        setState(_selected.clear);
-        game.play(rules.cardString(card));
-      } else {
-        setState(() => _selected
-          ..clear()
-          ..add(card));
-      }
+      audio.playSfx(SfxType.huhsh);
+      setState(_selected.clear);
+      game.play(rules.cardString(card));
     } else if (exchanging) {
       setState(() {
         if (!_selected.remove(card)) {
@@ -428,18 +688,20 @@ class _TableViewState extends State<TableView> {
 
     switch (game.phase) {
       case Phase.deciding:
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            MyButton(
+            _tableButton(
               onPressed: () {
                 audio.playSfx(SfxType.buttonTap);
                 game.decide(true);
               },
               child: Text(l('playBtn')),
             ),
-            const SizedBox(width: 16),
-            MyButton(
+            const SizedBox(height: 12),
+            _tableButton(
+              danger: true,
               onPressed: game.passAllowed
                   ? () {
                       audio.playSfx(SfxType.buttonTap);
@@ -451,22 +713,42 @@ class _TableViewState extends State<TableView> {
           ],
         );
       case Phase.exchanging:
-        return MyButton(
+        return _tableButton(
           onPressed: () {
             audio.playSfx(SfxType.buttonTap);
             game.exchange(_selected.map(rules.cardString).toList());
             setState(_selected.clear);
           },
-          child: Text(_selected.isEmpty
-              ? l('keepAll')
-              : '${l('exchangeN')} ${_selected.length}'),
+          child: Text(
+            _selected.isEmpty
+                ? l('keepAll')
+                : '${l('exchangeN')} ${_selected.length}',
+          ),
         );
       case Phase.playing:
-        return Text(l('playHint'));
+        return const SizedBox.shrink();
       default:
         return const SizedBox.shrink();
     }
   }
+
+  Widget _tableButton({
+    required Widget child,
+    required VoidCallback? onPressed,
+    bool danger = false,
+  }) => FilledButton(
+    style: FilledButton.styleFrom(
+      minimumSize: const Size(0, 44),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      backgroundColor: danger ? const Color(0xffef5350) : Colors.white,
+      foregroundColor: danger ? Colors.white : const Color(0xff008f83),
+      disabledBackgroundColor: Colors.white24,
+      disabledForegroundColor: Colors.white54,
+      shape: const StadiumBorder(),
+    ),
+    onPressed: onPressed,
+    child: child,
+  );
 
   void _showChatSheet(GameController game, L l) {
     showModalBottomSheet<void>(
@@ -512,8 +794,10 @@ class _TableViewState extends State<TableView> {
                 ),
                 SizedBox(
                   width: 80,
-                  child: Text('${l('score')} ${game.seats[seat].score}',
-                      textAlign: TextAlign.right),
+                  child: Text(
+                    '${l('score')} ${game.seats[seat].score}',
+                    textAlign: TextAlign.right,
+                  ),
                 ),
               ],
             ),
@@ -540,8 +824,10 @@ class _TableViewState extends State<TableView> {
 
   Widget _roundEndOverlay(GameController game, L l) {
     return _overlay([
-      Text(l.fmt('roundFinished', game.roundNo),
-          style: Theme.of(context).textTheme.titleLarge),
+      Text(
+        l.fmt('roundFinished', game.roundNo),
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
       const SizedBox(height: 12),
       _scoreTable(game, l),
       const SizedBox(height: 16),
@@ -558,11 +844,14 @@ class _TableViewState extends State<TableView> {
     return Stack(
       children: [
         _overlay([
-          Text(humanWon ? l('youWin') : l('gameOver'),
-              style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            humanWon ? l('youWin') : l('gameOver'),
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 8),
           Text(
-              '${l('winner')}: ${winners.map((s) => _seatName(game, l, s)).join(', ')}'),
+            '${l('winner')}: ${winners.map((s) => _seatName(game, l, s)).join(', ')}',
+          ),
           if (game is RemoteGameController &&
               game.winnings[game.humanSeat] != null)
             Padding(
@@ -575,40 +864,13 @@ class _TableViewState extends State<TableView> {
           const SizedBox(height: 12),
           _scoreTable(game, l),
           const SizedBox(height: 16),
-          MyButton(
-            onPressed: () => _leave(game),
-            child: Text(l('backToMenu')),
-          ),
+          MyButton(onPressed: () => _leave(game), child: Text(l('backToMenu'))),
         ]),
         if (humanWon)
           Positioned.fill(
             child: IgnorePointer(child: Confetti(isStopped: false)),
           ),
       ],
-    );
-  }
-}
-
-/// Pop-in animation for newly appearing cards (deals and plays).
-class _Appear extends StatelessWidget {
-  final Widget child;
-
-  const _Appear({required this.child, super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutBack,
-      child: child,
-      builder: (context, v, child) => Transform.translate(
-        offset: Offset(0, 14 * (1 - v)),
-        child: Transform.scale(
-          scale: 0.8 + 0.2 * v,
-          child: Opacity(opacity: v.clamp(0.0, 1.0), child: child),
-        ),
-      ),
     );
   }
 }

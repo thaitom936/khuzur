@@ -9,8 +9,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'net_client.dart';
 
-/// Dev default: the development server. Change in the settings screen.
-const defaultServerUrl = 'ws://54.254.223.5:9601/ws';
+/// Override with --dart-define=SERVER_URL=ws://localhost:9601/ws.
+/// An address saved in settings takes precedence.
+const defaultServerUrl = String.fromEnvironment(
+  'SERVER_URL',
+  defaultValue: 'ws://54.254.223.5:9601/ws',
+);
 
 class UserInfo {
   final int uid;

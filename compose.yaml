@@ -1,0 +1,39 @@
+name: khuzur
+
+services:
+  redis:
+    image: redis:7
+    command: [redis-server, --appendonly, "yes"]
+    ports:
+      - "${DB_BIND_ADDRESS:-127.0.0.1}:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    command: [--default-authentication-plugin=mysql_native_password]
+    environment:
+      MYSQL_ROOT_PASSWORD: khuzur_local_root
+      MYSQL_DATABASE: khuzur
+      MYSQL_USER: khuzur
+      MYSQL_PASSWORD: khuzur_dev_2026
+    ports:
+      - "${DB_BIND_ADDRESS:-127.0.0.1}:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: [CMD-SHELL, "MYSQL_PWD=$$MYSQL_PASSWORD mysql -h 127.0.0.1 -u khuzur khuzur -e 'SELECT 1'"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  mysql-data:
