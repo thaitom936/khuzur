@@ -4,6 +4,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'persistence/local_storage_settings_persistence.dart';
 import 'persistence/settings_persistence.dart';
@@ -35,6 +36,9 @@ class SettingsController {
   /// Whether or not the music is on.
   ValueNotifier<bool> musicOn = ValueNotifier(true);
 
+  /// UI language code: 'en', 'mn' or 'zh'.
+  ValueNotifier<String> lang = ValueNotifier('en');
+
   /// Creates a new instance of [SettingsController] backed by [store].
   ///
   /// By default, settings are persisted using [LocalStorageSettingsPersistence]
@@ -48,6 +52,12 @@ class SettingsController {
   void setPlayerName(String name) {
     playerName.value = name;
     _store.savePlayerName(playerName.value);
+  }
+
+  void setLang(String code) {
+    lang.value = code;
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.setString('lang', code));
   }
 
   void toggleAudioOn() {
@@ -84,6 +94,8 @@ class SettingsController {
           .getMusicOn(defaultValue: true)
           .then((value) => musicOn.value = value),
       _store.getPlayerName().then((value) => playerName.value = value),
+      SharedPreferences.getInstance()
+          .then((prefs) => lang.value = prefs.getString('lang') ?? 'en'),
     ]);
 
     _log.fine(() => 'Loaded settings: $loadedValues');

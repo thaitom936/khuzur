@@ -1,0 +1,43 @@
+{
+  "name": "basic full round, 2 players: decide, exchange nothing, 5 tricks, scoring",
+  "players": 2,
+  "dealer": 0,
+  "hands": [
+    ["AC", "KC", "QC", "JC", "TC"],
+    ["9C", "8C", "7C", "AD", "KD"]
+  ],
+  "trump": "7H",
+  "stock": [],
+  "steps": [
+    {"expect": {"phase": "deciding", "turn": 1}},
+    {"decide": {"seat": 1, "play": true}},
+    {"decide": {"seat": 0, "play": true}},
+    {"expect": {"phase": "exchanging", "turn": 1}},
+    {"exchange": {"seat": 1, "cards": []}},
+    {"exchange": {"seat": 0, "cards": []}},
+    {"expect": {"phase": "playing", "turn": 1, "trickNo": 1}},
+
+    {"play": {"seat": 1, "card": "AD"}},
+    {"legal": {"seat": 0, "cards": ["TC", "JC", "QC", "KC", "AC"]}},
+    {"play": {"seat": 0, "card": "TC"}},
+    {"expect": {"phase": "playing", "turn": 1, "trickNo": 2, "tricks": [0, 1]}},
+
+    {"play": {"seat": 1, "card": "KD"}},
+    {"play": {"seat": 0, "card": "JC"}},
+    {"expect": {"turn": 1, "tricks": [0, 2]}},
+
+    {"play": {"seat": 1, "card": "9C"}},
+    {"legal": {"seat": 0, "cards": ["QC", "KC", "AC"]}},
+    {"play": {"seat": 0, "card": "QC"}},
+    {"expect": {"turn": 0, "tricks": [1, 2]}},
+
+    {"play": {"seat": 0, "card": "AC"}},
+    {"legal": {"seat": 1, "cards": ["7C", "8C"]}},
+    {"play": {"seat": 1, "card": "8C"}},
+    {"expect": {"turn": 0, "tricks": [2, 2]}},
+
+    {"play": {"seat": 0, "card": "KC"}},
+    {"play": {"seat": 1, "card": "7C"}},
+    {"expect": {"phase": "round_end", "tricks": [3, 2], "scores": [12, 13]}}
+  ]
+}

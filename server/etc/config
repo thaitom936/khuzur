@@ -1,0 +1,37 @@
+root = "./"
+thread = 4
+harbor = 0
+start = "main"
+bootstrap = "snlua bootstrap"
+logger = nil
+logpath = "."
+
+luaservice = root.."service/?.lua;"..root.."skynet/service/?.lua"
+lualoader = root.."skynet/lualib/loader.lua"
+lua_path = root.."lualib/?.lua;"..root.."skynet/lualib/?.lua;"..root.."skynet/lualib/?/init.lua"
+lua_cpath = root.."skynet/luaclib/?.so"
+cpath = root.."skynet/cservice/?.so"
+
+-- app settings
+ws_port = 9601
+debug_port = 9600
+agent_pool = 4
+
+mysql_host = "127.0.0.1"
+mysql_port = 3306
+mysql_db = "khuzur"
+mysql_user = "khuzur"
+mysql_password = "khuzur_dev_2026"
+
+redis_host = "127.0.0.1"
+redis_port = 6379
+redis_db = 1
+
+-- gameplay timeouts, in centiseconds
+timeout_decide = 1000
+timeout_exchange = 1500
+timeout_play = 1500
+bot_delay = 80
+round_pause = 500
+quick_size = 4
+match_fill_after = 500

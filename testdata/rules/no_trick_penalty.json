@@ -1,0 +1,31 @@
+{
+  "name": "a player who plays and takes no trick gets +5",
+  "players": 2,
+  "dealer": 0,
+  "hands": [
+    ["7C", "8C", "9C", "TC", "JC"],
+    ["AC", "KC", "AD", "AH", "AS"]
+  ],
+  "trump": "7S",
+  "stock": [],
+  "steps": [
+    {"decide": {"seat": 1, "play": true}},
+    {"decide": {"seat": 0, "play": true}},
+    {"exchange": {"seat": 1, "cards": []}},
+    {"exchange": {"seat": 0, "cards": []}},
+
+    {"play": {"seat": 1, "card": "AC"}},
+    {"legal": {"seat": 0, "cards": ["7C", "8C", "9C", "TC", "JC"]}},
+    {"play": {"seat": 0, "card": "7C"}},
+    {"play": {"seat": 1, "card": "KC"}},
+    {"play": {"seat": 0, "card": "8C"}},
+    {"play": {"seat": 1, "card": "AD"}},
+    {"play": {"seat": 0, "card": "9C"}},
+    {"play": {"seat": 1, "card": "AH"}},
+    {"play": {"seat": 0, "card": "TC"}},
+    {"play": {"seat": 1, "card": "AS"}},
+    {"play": {"seat": 0, "card": "JC"}},
+
+    {"expect": {"phase": "round_end", "tricks": [0, 5], "scores": [20, 10]}}
+  ]
+}

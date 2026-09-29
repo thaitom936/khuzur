@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
+import '../net/session.dart';
 import '../player_progress/player_progress.dart';
 import '../style/my_button.dart';
 import '../style/palette.dart';
@@ -56,6 +58,25 @@ class SettingsScreen extends StatelessWidget {
                 onSelected: () => settings.toggleMusicOn(),
               ),
             ),
+            ValueListenableBuilder<String>(
+              valueListenable: settings.lang,
+              builder: (context, lang, child) => _SettingsLine(
+                '${L.of(context)('language')}: ${langNames[lang]}',
+                const Icon(Icons.language),
+                onSelected: () {
+                  final i = supportedLangs.indexOf(lang);
+                  final next =
+                      supportedLangs[(i + 1) % supportedLangs.length];
+                  settings.setLang(next);
+                  context.read<Session>().setLang(next);
+                },
+              ),
+            ),
+            _SettingsLine(
+              L.of(context)('serverUrl'),
+              const Icon(Icons.dns),
+              onSelected: () => _serverUrlDialog(context),
+            ),
             _SettingsLine(
               'Reset progress',
               const Icon(Icons.delete),
@@ -82,6 +103,31 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+void _serverUrlDialog(BuildContext context) {
+  final session = context.read<Session>();
+  final controller = TextEditingController(text: defaultServerUrl);
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(L.of(context)('serverUrl')),
+      content: TextField(controller: controller),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(L.of(context)('cancel')),
+        ),
+        TextButton(
+          onPressed: () {
+            session.setServerUrl(controller.text.trim());
+            Navigator.pop(context);
+          },
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _NameChangeLine extends StatelessWidget {

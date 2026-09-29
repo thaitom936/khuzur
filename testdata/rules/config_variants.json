@@ -1,0 +1,43 @@
+{
+  "name": "mustBeat/mustTrump off; passer skips exchange and play, score unchanged",
+  "players": 3,
+  "dealer": 0,
+  "config": {"mustBeat": false, "mustTrump": false},
+  "hands": [
+    ["AC", "KC", "QC", "JC", "TC"],
+    ["9C", "8C", "7C", "AD", "KD"],
+    ["QD", "JD", "TD", "9D", "8D"]
+  ],
+  "trump": "7H",
+  "stock": [],
+  "steps": [
+    {"decide": {"seat": 1, "play": true}},
+    {"decide": {"seat": 2, "play": false}},
+    {"decide": {"seat": 0, "play": false}, "error": "must_play_min_players"},
+    {"decide": {"seat": 0, "play": true}},
+    {"expect": {"phase": "exchanging", "turn": 1}},
+    {"exchange": {"seat": 1, "cards": []}},
+    {"exchange": {"seat": 0, "cards": []}},
+    {"expect": {"phase": "playing", "turn": 1}},
+
+    {"play": {"seat": 1, "card": "9C"}},
+    {"legal": {"seat": 0, "cards": ["TC", "JC", "QC", "KC", "AC"]}},
+    {"play": {"seat": 0, "card": "TC"}},
+    {"expect": {"turn": 0, "trickNo": 2, "tricks": [1, 0, 0]}},
+
+    {"play": {"seat": 0, "card": "AC"}},
+    {"legal": {"seat": 1, "cards": ["7C", "8C"]}},
+    {"play": {"seat": 1, "card": "7C"}},
+    {"play": {"seat": 0, "card": "KC"}},
+    {"play": {"seat": 1, "card": "8C"}},
+    {"expect": {"turn": 0, "trickNo": 4, "tricks": [3, 0, 0]}},
+
+    {"play": {"seat": 0, "card": "QC"}},
+    {"legal": {"seat": 1, "cards": ["AD", "KD"]}},
+    {"play": {"seat": 1, "card": "AD"}},
+    {"play": {"seat": 0, "card": "JC"}},
+    {"play": {"seat": 1, "card": "KD"}},
+
+    {"expect": {"phase": "round_end", "tricks": [5, 0, 0], "scores": [10, 20, 15]}}
+  ]
+}

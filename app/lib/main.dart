@@ -12,6 +12,8 @@ import 'package:provider/provider.dart';
 
 import 'app_lifecycle/app_lifecycle.dart';
 import 'audio/audio_controller.dart';
+import 'game/remote_game.dart';
+import 'net/session.dart';
 import 'player_progress/player_progress.dart';
 import 'router.dart';
 import 'settings/settings.dart';
@@ -58,6 +60,10 @@ class MyApp extends StatelessWidget {
           Provider(create: (context) => SettingsController()),
           Provider(create: (context) => Palette()),
           ChangeNotifierProvider(create: (context) => PlayerProgress()),
+          ChangeNotifierProvider(create: (context) => Session()),
+          ChangeNotifierProvider(
+            create: (context) => RemoteGameController(context.read<Session>()),
+          ),
           // Set up audio.
           ProxyProvider2<
             AppLifecycleStateNotifier,
@@ -77,9 +83,12 @@ class MyApp extends StatelessWidget {
         child: Builder(
           builder: (context) {
             final palette = context.watch<Palette>();
+            final settings = context.watch<SettingsController>();
 
-            return MaterialApp.router(
-              title: 'My Flutter Game',
+            return ValueListenableBuilder(
+              valueListenable: settings.lang,
+              builder: (context, lang, child) => MaterialApp.router(
+              title: 'Muushig',
               theme:
                   ThemeData.from(
                     colorScheme: ColorScheme.fromSeed(
@@ -102,6 +111,7 @@ class MyApp extends StatelessWidget {
                     ),
                   ),
               routerConfig: router,
+              ),
             );
           },
         ),

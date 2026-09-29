@@ -1,9 +1,6 @@
-// Copyright 2022, the Flutter project authors. Please see the AUTHORS file
-// for details. All rights reserved. Use of this source code is governed by a
-// BSD-style license that can be found in the LICENSE file.
-
 import 'package:card/main.dart';
-import 'package:card/play_session/playing_card_widget.dart';
+import 'package:card/play_session/card_widget.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -11,10 +8,8 @@ void main() {
     // Build our game and trigger a frame.
     await tester.pumpWidget(MyApp());
 
-    // Verify that the 'Play' button is shown.
-    expect(find.text('Play'), findsOneWidget);
-
-    // Verify that the 'Settings' button is shown.
+    // Verify that the main menu buttons are shown.
+    expect(find.text('Single player'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
 
     // Go to 'Settings'.
@@ -26,16 +21,19 @@ void main() {
     await tester.tap(find.text('Back'));
     await tester.pumpAndSettle();
 
-    // Tap 'Play'.
-    await tester.tap(find.text('Play'));
-    await tester.pumpAndSettle();
-    expect(find.byType(PlayingCardWidget), findsWidgets);
+    // Tap 'Single player': the table appears with trump card and hand.
+    await tester.tap(find.text('Single player'));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(CardView), findsWidgets);
 
-    // Tap 'Back'.
-    await tester.tap(find.text('Back'));
+    // Back to the main menu.
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
+    expect(find.text('Single player'), findsOneWidget);
 
-    // Verify we're back on the homepage.
-    expect(find.text('Play'), findsOneWidget);
+    // Let the bot loop notice the controller is disposed so no timers leak.
+    await tester.pump(const Duration(seconds: 3));
   });
 }

@@ -1,0 +1,35 @@
+{
+  "name": "pass restrictions (low score, min players), turn order, exchange rules",
+  "players": 5,
+  "dealer": 0,
+  "scores": [15, 15, 15, 1, 15],
+  "hands": [
+    ["AC", "KC", "QC", "JC", "TC"],
+    ["9C", "8C", "7C", "AD", "KD"],
+    ["QD", "JD", "TD", "9D", "8D"],
+    ["7D", "AH", "KH", "QH", "JH"],
+    ["TH", "9H", "8H", "7H", "AS"]
+  ],
+  "trump": "KS",
+  "stock": ["QS", "JS", "TS", "9S", "8S", "7S"],
+  "steps": [
+    {"decide": {"seat": 2, "play": true}, "error": "not_your_turn"},
+    {"decide": {"seat": 1, "play": false}},
+    {"decide": {"seat": 2, "play": false}},
+    {"decide": {"seat": 3, "play": false}, "error": "must_play_low_score"},
+    {"decide": {"seat": 3, "play": true}},
+    {"decide": {"seat": 4, "play": false}},
+    {"decide": {"seat": 0, "play": false}, "error": "must_play_min_players"},
+    {"decide": {"seat": 0, "play": true}},
+    {"expect": {"phase": "exchanging", "turn": 3}},
+
+    {"exchange": {"seat": 0, "cards": []}, "error": "not_your_turn"},
+    {"exchange": {"seat": 3, "cards": ["7D", "JH", "QH"]}},
+    {"expect": {"turn": 0, "hand": {"seat": 3, "cards": ["AH", "KH", "QS", "JS", "TS"]}}},
+    {"exchange": {"seat": 0, "cards": ["AC", "KC", "QC", "JC"]}, "error": "exchange_too_many"},
+    {"exchange": {"seat": 0, "cards": ["7D"]}, "error": "card_not_in_hand"},
+    {"exchange": {"seat": 0, "cards": ["TC"]}},
+    {"expect": {"phase": "playing", "turn": 3, "trickNo": 1,
+                "hand": {"seat": 0, "cards": ["AC", "KC", "QC", "JC", "9S"]}}}
+  ]
+}
