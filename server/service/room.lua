@@ -7,6 +7,7 @@ local engine = require "rules.engine"
 local bot = require "rules.bot"
 
 local mode, size, code
+local stake = 0 -- per-player entry fee, escrowed by the agents
 local cfg = engine.defaultConfig()
 local players = {}   -- seat(1-based) -> {uid,name,agent,fd,bot,online,auto,misses}
 local started = false
@@ -15,6 +16,7 @@ local roundNo = 0
 local dealerSeat = 1
 local turnId = 0
 local deadline = 0      -- absolute, in centiseconds (skynet.now())
+local totalTricks = {}  -- seat -> tricks across the whole game
 
 local T = {}            -- timeouts, filled in skynet.start
 
@@ -82,6 +84,7 @@ local function snapshot(seat)
     mode = mode,
     code = code,
     size = size,
+    stake = stake,
     round = roundNo,
     phase = st and st.phase,
     turn = st and st.turn - 1,
@@ -165,13 +168,37 @@ local function endRound()
       winners[#winners + 1] = s - 1
       winnerSet[s] = true
     end
-    broadcast { push = "game_end", winners = winners, scores = scores() }
+    -- Coin pot: every human paid `stake`; human winners split the pot
+    -- equally, a bot winner's share is burned.
+    local humanCount = 0
+    for _, p in ipairs(players) do
+      if p.uid then humanCount = humanCount + 1 end
+    end
+    local pot = stake * humanCount
+    local share = pot > 0 and pot // #st.winners or 0
+    local winnings = {}
+    for i, p in ipairs(players) do
+      if p.uid and winnerSet[i] and share > 0 then
+        winnings[#winnings + 1] = { seat = i - 1, coins = share }
+        skynet.send(".db", "lua", "coins_add", p.uid, share)
+      end
+    end
+    broadcast {
+      push = "game_end",
+      winners = winners,
+      scores = scores(),
+      winnings = winnings,
+    }
     local humans = {}
     local uids = {}
     for i, p in ipairs(players) do
       if p.uid then
-        humans[#humans + 1] =
-          { uid = p.uid, win = winnerSet[i] or false, score = st.players[i].score }
+        humans[#humans + 1] = {
+          uid = p.uid,
+          win = winnerSet[i] or false,
+          score = st.players[i].score,
+          tricks = totalTricks[i] or 0,
+        }
         uids[#uids + 1] = p.uid
       end
     end
@@ -216,6 +243,7 @@ local function doPlay(seat, cardStr)
     for i, e in ipairs(st.players) do
       if e.tricks > before[i] then winner = i end
     end
+    totalTricks[winner] = (totalTricks[winner] or 0) + 1
     broadcast { push = "trick_end", winner = winner - 1 }
   end
   postAction()
@@ -286,6 +314,7 @@ local function startGame()
       you = i - 1,
       size = size,
       code = code,
+      stake = stake,
       seats = seatInfos(),
       config = cfg,
     })
@@ -295,10 +324,15 @@ end
 
 ---------------------------------------------------------------- commands
 
+function CMD.info()
+  return { stake = stake, started = started, code = code }
+end
+
 function CMD.init(opts)
   mode = opts.mode
   size = opts.size
   code = opts.code
+  stake = opts.stake or 0
   for _, p in ipairs(opts.players) do
     players[#players + 1] = {
       uid = p.uid, name = p.name, agent = p.agent, fd = p.fd,
@@ -308,7 +342,7 @@ function CMD.init(opts)
   if mode == "quick" or #players == size then
     startGame()
   else
-    broadcast { push = "room_update", code = code, size = size, seats = seatInfos() }
+    broadcast { push = "room_update", code = code, size = size, stake = stake, seats = seatInfos() }
   end
   return true
 end
@@ -320,7 +354,7 @@ function CMD.join(p)
     uid = p.uid, name = p.name, agent = p.agent, fd = p.fd,
     bot = false, online = true, misses = 0,
   }
-  broadcast { push = "room_update", code = code, size = size, seats = seatInfos() }
+  broadcast { push = "room_update", code = code, size = size, stake = stake, seats = seatInfos() }
   if #players == size then startGame() end
   return true
 end
@@ -338,7 +372,7 @@ function CMD.leave(uid)
     skynet.send(".hub", "lua", "room_closed", skynet.self(), {})
     skynet.timeout(10, function() skynet.exit() end)
   else
-    broadcast { push = "room_update", code = code, size = size, seats = seatInfos() }
+    broadcast { push = "room_update", code = code, size = size, stake = stake, seats = seatInfos() }
   end
   return true
 end

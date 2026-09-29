@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import 'main_menu/main_menu_screen.dart';
+import 'online/friends_screen.dart';
 import 'online/online_screen.dart';
 import 'online/rank_screen.dart';
 import 'play_session/play_session_screen.dart';
@@ -41,6 +42,11 @@ final router = GoRouter(
             GoRoute(
               path: 'rank',
               builder: (context, state) => const RankScreen(key: Key('rank')),
+            ),
+            GoRoute(
+              path: 'friends',
+              builder: (context, state) =>
+                  const FriendsScreen(key: Key('friends')),
             ),
           ],
         ),

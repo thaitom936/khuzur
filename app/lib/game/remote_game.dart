@@ -60,6 +60,10 @@ class RemoteGameController extends GameController {
   @override
   bool autoPlaying = false;
 
+  /// Coin winnings by seat, from the game_end push.
+  Map<int, int> winnings = {};
+  int stake = 0;
+
   RuleConfig config = const RuleConfig();
   bool started = false;
   bool gameOver = false;
@@ -138,6 +142,8 @@ class RemoteGameController extends GameController {
     roundNo = 0;
     autoPlaying = false;
     turnDeadline = null;
+    winnings = {};
+    stake = 0;
     notifyListeners();
   }
 
@@ -192,6 +198,7 @@ class RemoteGameController extends GameController {
         humanSeat = msg['you'] as int? ?? humanSeat;
         numPlayers = msg['size'] as int? ?? numPlayers;
         roomCode = msg['code'] as String?;
+        stake = msg['stake'] as int? ?? 0;
         if (msg['config'] is Map) {
           config = RuleConfig.fromJson((msg['config'] as Map).cast());
         }
@@ -273,6 +280,11 @@ class RemoteGameController extends GameController {
         phase = Phase.gameEnd;
         gameOver = true;
         winners = (msg['winners'] as List).cast<int>();
+        winnings = {
+          for (final w
+              in (msg['winnings'] as List? ?? []).cast<Map<String, dynamic>>())
+            w['seat'] as int: w['coins'] as int,
+        };
       case 'seat_state':
         final seat = msg['seat'] as int;
         _updateSeat(seat,
@@ -289,6 +301,7 @@ class RemoteGameController extends GameController {
       case 'room_update':
         roomCode = msg['code'] as String?;
         numPlayers = msg['size'] as int? ?? numPlayers;
+        stake = msg['stake'] as int? ?? stake;
         seats = _parseSeats(msg['seats'] as List? ?? []);
         started = false;
       default:

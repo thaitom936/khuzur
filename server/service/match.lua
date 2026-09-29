@@ -4,15 +4,15 @@
 local skynet = require "skynet"
 require "skynet.manager" -- for skynet.register
 
-local queues = {} -- size -> list of {uid, name, agent, fd, since}
-local queued = {} -- uid -> size
+local queues = {} -- "<size>:<stake>" -> list of {uid, name, agent, fd, since}
+local queued = {} -- uid -> queue key
 
 local CMD = {}
 
 local fill_after
 local default_size
 
-local function startRoom(size, players)
+local function startRoom(size, stake, players)
   for _, p in ipairs(players) do
     queued[p.uid] = nil
   end
@@ -20,7 +20,8 @@ local function startRoom(size, players)
   for i = 1, bots do
     players[#players + 1] = { bot = true, name = "Bot " .. i }
   end
-  local room = skynet.call(".hub", "lua", "create_room", "quick", size, players)
+  local room = skynet.call(".hub", "lua", "create_room", "quick", size,
+    players, stake)
   for _, p in ipairs(players) do
     if p.agent then
       skynet.send(p.agent, "lua", "push", p.fd,
@@ -29,34 +30,41 @@ local function startRoom(size, players)
   end
 end
 
-function CMD.enqueue(player, size)
+--- The stake was already escrowed by the agent before enqueueing.
+function CMD.enqueue(player, size, stake)
   size = size or default_size
+  stake = stake or 0
   if size < 2 or size > 5 then return nil, "bad_size" end
   if queued[player.uid] then return nil, "already_queued" end
-  local q = queues[size]
+  local key = size .. ":" .. stake
+  local q = queues[key]
   if not q then
-    q = {}
-    queues[size] = q
+    q = { size = size, stake = stake }
+    queues[key] = q
   end
   player.since = skynet.now()
   q[#q + 1] = player
-  queued[player.uid] = size
+  queued[player.uid] = key
   if #q >= size then
     local players = {}
     for i = 1, size do players[i] = table.remove(q, 1) end
-    startRoom(size, players)
+    startRoom(size, stake, players)
   end
   return true
 end
 
+--- Removes a queued player and refunds their escrowed stake.
 function CMD.remove(uid)
-  local size = queued[uid]
-  if not size then return true end
+  local key = queued[uid]
+  if not key then return true end
   queued[uid] = nil
-  local q = queues[size]
+  local q = queues[key]
   for i, p in ipairs(q) do
     if p.uid == uid then
       table.remove(q, i)
+      if q.stake > 0 then
+        skynet.send(".db", "lua", "coins_add", uid, q.stake)
+      end
       break
     end
   end
@@ -66,13 +74,16 @@ end
 local function tick()
   while true do
     skynet.sleep(100)
-    for size, q in pairs(queues) do
-      if #q > 0 and skynet.now() - q[1].since >= fill_after then
+    for _, q in pairs(queues) do
+      -- Coin tables only start with at least two humans; free tables can
+      -- start solo against bots.
+      if #q > 0 and (q.stake == 0 or #q >= 2)
+          and skynet.now() - q[1].since >= fill_after then
         local players = {}
-        while #q > 0 and #players < size do
+        while #q > 0 and #players < q.size do
           players[#players + 1] = table.remove(q, 1)
         end
-        startRoom(size, players)
+        startRoom(q.size, q.stake, players)
       end
     end
   end

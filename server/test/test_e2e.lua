@@ -219,6 +219,106 @@ local function scenario_resume_token()
   websocket.close(b.id)
 end
 
+local function scenario_friends_and_invite()
+  local a = connect("FA")
+  local b = connect("FB")
+  local ra = a:call { cmd = "login", device = "e2e-device-f-aa", name = "Fa" }
+  local rb = b:call { cmd = "login", device = "e2e-device-f-bb", name = "Fb" }
+  check(not ra.err and not rb.err, "friend logins failed")
+
+  -- Request + accept via name lookup.
+  local r = a:call { cmd = "friend_add", q = "Fb" }
+  check(r.status == "requested" and r.uid == rb.uid,
+    "friend_add: " .. tostring(r.err or r.status))
+  r = a:call { cmd = "friend_add", q = "Fb" }
+  check(r.err == "already_requested", "expected already_requested")
+
+  b:waitPush("friend_update")
+  r = b:call { cmd = "friends" }
+  check(#r.requests == 1 and r.requests[1].uid == ra.uid, "request not listed")
+  r = b:call { cmd = "friend_respond", uid = ra.uid, accept = true }
+  check(not r.err, "friend_respond: " .. tostring(r.err))
+
+  r = a:call { cmd = "friends" }
+  check(#r.friends == 1 and r.friends[1].uid == rb.uid and r.friends[1].online,
+    "friend not listed online")
+
+  -- Invite from a friend room.
+  r = a:call { cmd = "create_room", size = 2 }
+  check(not r.err, "create_room: " .. tostring(r.err))
+  r = a:call { cmd = "invite", uid = rb.uid }
+  check(not r.err, "invite: " .. tostring(r.err))
+  local inv = b:waitPush("invite")
+  check(inv.from == "Fa" and inv.code, "bad invite push")
+  r = b:call { cmd = "join_room", code = inv.code }
+  check(not r.err, "join via invite: " .. tostring(r.err))
+  a:waitPush("game_start")
+  b:waitPush("game_start")
+  local done = 0
+  local function drive(cl)
+    skynet.fork(function()
+      cl:playUntilGameEnd()
+      done = done + 1
+    end)
+  end
+  drive(a)
+  drive(b)
+  while done < 2 do skynet.sleep(10) end
+  skynet.error("E2E friends_and_invite OK")
+  websocket.close(a.id)
+  websocket.close(b.id)
+end
+
+local function scenario_coins_and_daily()
+  local a = connect("CA")
+  local b = connect("CB")
+  local ra = a:call { cmd = "login", device = "e2e-device-c-aa", name = "Ca" }
+  local rb = b:call { cmd = "login", device = "e2e-device-c-bb", name = "Cb" }
+  check(ra.coins == 1000 and rb.coins == 1000, "starting coins not 1000")
+
+  -- Daily bonus: claim once, second claim fails.
+  local r = a:call { cmd = "daily" }
+  check(not r.err and r.bonus_claimed == false and #r.tasks == 3, "daily state")
+  r = a:call { cmd = "daily_claim" }
+  check(r.coins == 1200, "bonus claim: got " .. tostring(r.coins))
+  r = a:call { cmd = "daily_claim" }
+  check(r.err == "already_claimed", "expected already_claimed")
+
+  -- Bad stake / insufficient balance are rejected.
+  r = a:call { cmd = "quick_match", stake = 123 }
+  check(r.err == "bad_stake", "expected bad_stake")
+
+  -- Coin table for two: stakes escrowed, winner takes the pot.
+  r = a:call { cmd = "quick_match", size = 2, stake = 100 }
+  check(not r.err, "A coin match: " .. tostring(r.err))
+  r = b:call { cmd = "quick_match", size = 2, stake = 100 }
+  check(not r.err, "B coin match: " .. tostring(r.err))
+  a:waitPush("game_start")
+  b:waitPush("game_start")
+  local ends = {}
+  local function drive(cl, key)
+    skynet.fork(function()
+      ends[key] = cl:playUntilGameEnd()
+    end)
+  end
+  drive(a, "a")
+  drive(b, "b")
+  while not (ends.a and ends.b) do skynet.sleep(10) end
+  check(#ends.a.winnings >= 1, "no winnings reported")
+
+  -- Balances: winner got the 200 pot, loser lost the 100 stake.
+  local da = a:call { cmd = "daily" }
+  local db_ = b:call { cmd = "daily" }
+  local total = da.coins + db_.coins
+  check(total == 1200 + 1000, "pot not conserved: " .. total)
+
+  -- Task progress advanced (played a game; one of them won it).
+  check(da.tasks[1].progress == 1, "play3 progress")
+  skynet.error("E2E coins_and_daily OK")
+  websocket.close(a.id)
+  websocket.close(b.id)
+end
+
 ---------------------------------------------------------------- boot & run
 
 skynet.start(function()
@@ -240,6 +340,8 @@ skynet.start(function()
     scenario_resume_token()
     scenario_quick_match_with_bots()
     scenario_friend_room_two_humans()
+    scenario_friends_and_invite()
+    scenario_coins_and_daily()
   end)
   if ok and not failed then
     skynet.error("E2E PASS")

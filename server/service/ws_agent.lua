@@ -41,8 +41,8 @@ function HANDLERS.login(fd, c, msg)
   local inRoom = skynet.call(".hub", "lua", "register", c.uid, skynet.self(), fd)
   local resp = {
     uid = user.uid, name = user.name, lang = user.lang,
-    games = user.games, wins = user.wins, token = token,
-    in_room = inRoom,
+    coins = user.coins, games = user.games, wins = user.wins,
+    token = token, in_room = inRoom,
   }
   if inRoom then
     local room = roomOf(c.uid)
@@ -65,7 +65,8 @@ function HANDLERS.resume(fd, c, msg)
   end
   return {
     uid = user.uid, name = user.name, lang = user.lang,
-    games = user.games, wins = user.wins, in_room = inRoom,
+    coins = user.coins, games = user.games, wins = user.wins,
+    in_room = inRoom,
   }
 end
 
@@ -97,11 +98,34 @@ local function playerEntry(fd, c)
   return { uid = c.uid, name = c.name, agent = skynet.self(), fd = fd }
 end
 
+local STAKES = { [0] = true, [100] = true, [500] = true, [2000] = true }
+
+-- Takes the entry fee before queueing/joining. Returns nil, err on failure.
+local function escrow(uid, stakeAmount)
+  if stakeAmount == 0 then return true end
+  local bal, err = skynet.call(".db", "lua", "coins_add", uid, -stakeAmount)
+  if not bal then return nil, err end
+  return true
+end
+
+local function refund(uid, stakeAmount)
+  if stakeAmount > 0 then
+    skynet.send(".db", "lua", "coins_add", uid, stakeAmount)
+  end
+end
+
 HANDLERS.quick_match = authed(function(fd, c, msg)
   if roomOf(c.uid) then return nil, "already_in_room" end
-  local ok, err = skynet.call(".match", "lua", "enqueue",
-    playerEntry(fd, c), msg.size)
+  local stake = tonumber(msg.stake) or 0
+  if not STAKES[stake] then return nil, "bad_stake" end
+  local ok, err = escrow(c.uid, stake)
   if not ok then return nil, err end
+  ok, err = skynet.call(".match", "lua", "enqueue",
+    playerEntry(fd, c), msg.size, stake)
+  if not ok then
+    refund(c.uid, stake)
+    return nil, err
+  end
   return {}
 end)
 
@@ -114,24 +138,38 @@ HANDLERS.create_room = authed(function(fd, c, msg)
   if roomOf(c.uid) then return nil, "already_in_room" end
   local size = tonumber(msg.size) or 4
   if size < 2 or size > 5 then return nil, "bad_size" end
+  local stake = tonumber(msg.stake) or 0
+  if not STAKES[stake] then return nil, "bad_stake" end
+  local ok, err = escrow(c.uid, stake)
+  if not ok then return nil, err end
   local _, roomCode = skynet.call(".hub", "lua", "create_room", "friend",
-    size, { playerEntry(fd, c) })
+    size, { playerEntry(fd, c) }, stake)
   return { code = roomCode }
 end)
 
 HANDLERS.join_room = authed(function(fd, c, msg)
   if roomOf(c.uid) then return nil, "already_in_room" end
-  local room, err = skynet.call(".hub", "lua", "join_room",
-    tostring(msg.code or ""), playerEntry(fd, c))
-  if not room then return nil, err end
+  local code = tostring(msg.code or "")
+  local info, ierr = skynet.call(".hub", "lua", "room_info", code)
+  if not info then return nil, ierr end
+  local ok, err = escrow(c.uid, info.stake)
+  if not ok then return nil, err end
+  local room, jerr = skynet.call(".hub", "lua", "join_room",
+    code, playerEntry(fd, c))
+  if not room then
+    refund(c.uid, info.stake)
+    return nil, jerr
+  end
   return {}
 end)
 
 HANDLERS.leave_room = authed(function(fd, c, msg)
   local room = roomOf(c.uid)
   if not room then return nil, "not_in_room" end
+  local info = skynet.call(room, "lua", "info")
   local ok, err = skynet.call(room, "lua", "leave", c.uid)
   if not ok then return nil, err end
+  refund(c.uid, info.stake) -- leaving is only possible before the start
   return {}
 end)
 
@@ -140,6 +178,77 @@ HANDLERS.start_room = authed(function(fd, c, msg)
   if not room then return nil, "not_in_room" end
   local ok, err = skynet.call(room, "lua", "start", c.uid)
   if not ok then return nil, err end
+  return {}
+end)
+
+---------------------------------------------------------------- coins & daily
+
+HANDLERS.daily = authed(function(fd, c, msg)
+  return skynet.call(".db", "lua", "daily_state", c.uid)
+end)
+
+HANDLERS.daily_claim = authed(function(fd, c, msg)
+  local coins, err
+  if msg.task then
+    coins, err = skynet.call(".db", "lua", "daily_claim_task", c.uid, msg.task)
+  else
+    coins, err = skynet.call(".db", "lua", "daily_claim_bonus", c.uid)
+  end
+  if not coins then return nil, err end
+  return { coins = coins }
+end)
+
+---------------------------------------------------------------- friends
+
+HANDLERS.friends = authed(function(fd, c, msg)
+  local list = skynet.call(".db", "lua", "friend_list", c.uid)
+  for _, f in ipairs(list.friends) do
+    f.online = skynet.call(".hub", "lua", "is_online", f.uid)
+  end
+  return list
+end)
+
+HANDLERS.friend_add = authed(function(fd, c, msg)
+  local target = skynet.call(".db", "lua", "find_user", tostring(msg.q or ""))
+  if not target then return nil, "no_user" end
+  local status, err = skynet.call(".db", "lua", "friend_add", c.uid, target.uid)
+  if not status then return nil, err end
+  skynet.call(".hub", "lua", "push_to", target.uid, {
+    push = "friend_update",
+  })
+  return { status = status, uid = target.uid, name = target.name }
+end)
+
+HANDLERS.friend_respond = authed(function(fd, c, msg)
+  local ok, err = skynet.call(".db", "lua", "friend_respond", c.uid,
+    tonumber(msg.uid), msg.accept and true or false)
+  if not ok then return nil, err end
+  skynet.call(".hub", "lua", "push_to", tonumber(msg.uid),
+    { push = "friend_update" })
+  return {}
+end)
+
+HANDLERS.friend_remove = authed(function(fd, c, msg)
+  skynet.call(".db", "lua", "friend_remove", c.uid, tonumber(msg.uid))
+  return {}
+end)
+
+--- Invites a friend to the (unstarted) friend room the player is in.
+HANDLERS.invite = authed(function(fd, c, msg)
+  local room = roomOf(c.uid)
+  if not room then return nil, "not_in_room" end
+  local info = skynet.call(room, "lua", "info")
+  if info.started or not info.code then return nil, "already_started" end
+  local fuid = tonumber(msg.uid)
+  local status = skynet.call(".db", "lua", "find_user", tostring(fuid))
+  if not status then return nil, "no_user" end
+  local delivered = skynet.call(".hub", "lua", "push_to", fuid, {
+    push = "invite",
+    from = c.name,
+    code = info.code,
+    stake = info.stake,
+  })
+  if not delivered then return nil, "friend_offline" end
   return {}
 end)
 

@@ -1,6 +1,9 @@
-/// Online lobby: connect + guest login, rename, quick match, friend rooms,
-/// leaderboard entry. Navigates to the table when a game starts.
+/// Online lobby: connect + guest login, rename, coins/daily rewards,
+/// friends, quick match and friend rooms (with stakes), leaderboard.
+/// Navigates to the table when a game starts.
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -10,9 +13,12 @@ import '../game/remote_game.dart';
 import '../l10n/strings.dart';
 import '../net/net_client.dart';
 import '../net/session.dart';
+import '../settings/settings.dart';
 import '../style/my_button.dart';
 import '../style/palette.dart';
 import '../style/responsive_screen.dart';
+
+const stakes = [0, 100, 500, 2000];
 
 class OnlineScreen extends StatefulWidget {
   const OnlineScreen({super.key});
@@ -27,6 +33,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
   _LobbyState _state = _LobbyState.lobby;
   String? _error;
   RemoteGameController? _game;
+  StreamSubscription? _pushSub;
 
   @override
   void initState() {
@@ -41,10 +48,18 @@ class _OnlineScreenState extends State<OnlineScreen> {
     _game = context.read<RemoteGameController>();
     if (_game!.gameOver) _game!.reset();
     _game!.addListener(_onGame);
+    _pushSub = session.client.pushes.listen(_onPush);
     try {
       await session.ensureOnline();
+      await session.refreshCoins();
     } on NetException catch (e) {
       if (mounted) setState(() => _error = e.code);
+    }
+  }
+
+  void _onPush(Map<String, dynamic> msg) {
+    if (msg['push'] == 'invite' && mounted) {
+      _inviteDialog(msg);
     }
   }
 
@@ -63,6 +78,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
   @override
   void dispose() {
     _game?.removeListener(_onGame);
+    _pushSub?.cancel();
     super.dispose();
   }
 
@@ -84,19 +100,21 @@ class _OnlineScreenState extends State<OnlineScreen> {
     if (mounted) setState(() => _state = s);
   }
 
-  void _quickMatch() => _run(() async {
-        await context.read<Session>().client.call('quick_match');
+  void _quickMatch(int stake) => _run(() async {
+        await context.read<Session>().client
+            .call('quick_match', {'stake': stake});
         _setLobbyState(_LobbyState.queueing);
       });
 
   void _cancelMatch() => _run(() async {
         await context.read<Session>().client.call('cancel_match');
+        await context.read<Session>().refreshCoins();
         _setLobbyState(_LobbyState.lobby);
       });
 
-  void _createRoom(int size) => _run(() async {
+  void _createRoom(int size, int stake) => _run(() async {
         await context.read<Session>().client
-            .call('create_room', {'size': size});
+            .call('create_room', {'size': size, 'stake': stake});
         _setLobbyState(_LobbyState.waitingRoom);
       });
 
@@ -107,6 +125,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
 
   void _leaveRoom() => _run(() async {
         await context.read<Session>().client.call('leave_room');
+        await context.read<Session>().refreshCoins();
         _setLobbyState(_LobbyState.lobby);
       });
 
@@ -169,8 +188,9 @@ class _OnlineScreenState extends State<OnlineScreen> {
           ListTile(
             title: Text(user.name,
                 style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle:
-                Text('${l('games')}: ${user.games} · ${l('wins')}: ${user.wins}'),
+            subtitle: Text(
+                '${l('games')}: ${user.games} · ${l('wins')}: ${user.wins}\n'
+                '${l('coins')}: ${user.coins}'),
             trailing: IconButton(
               icon: const Icon(Icons.edit),
               onPressed: () => _renameDialog(session, l),
@@ -193,7 +213,10 @@ class _OnlineScreenState extends State<OnlineScreen> {
             ),
           ],
           const SizedBox(height: 12),
-          MyButton(onPressed: _quickMatch, child: Text(l('quickMatch'))),
+          MyButton(
+            onPressed: () => _stakeSheet(l, (stake) => _quickMatch(stake)),
+            child: Text(l('quickMatch')),
+          ),
           const SizedBox(height: 12),
           MyButton(
             onPressed: () => _sizeDialog(l),
@@ -203,6 +226,16 @@ class _OnlineScreenState extends State<OnlineScreen> {
           MyButton(
             onPressed: () => _joinDialog(l),
             child: Text(l('joinRoom')),
+          ),
+          const SizedBox(height: 12),
+          MyButton(
+            onPressed: () => _dailySheet(session, l),
+            child: Text(l('dailyTitle')),
+          ),
+          const SizedBox(height: 12),
+          MyButton(
+            onPressed: () => GoRouter.of(context).push('/online/friends'),
+            child: Text(l('friends')),
           ),
           const SizedBox(height: 12),
           MyButton(
@@ -237,12 +270,18 @@ class _OnlineScreenState extends State<OnlineScreen> {
         children: [
           Text('${l('roomCode')}: ${game.roomCode ?? '…'}',
               style: Theme.of(context).textTheme.headlineMedium),
+          if (game.stake > 0) Text('${l('stake')}: ${game.stake}'),
           const SizedBox(height: 12),
           for (final s in game.seats) Text(s.name),
           Text('${game.seats.length} / ${game.numPlayers}'),
           const SizedBox(height: 16),
           Text(l('waitingFriends')),
           const SizedBox(height: 16),
+          MyButton(
+            onPressed: () => _inviteSheet(l),
+            child: Text(l('inviteFriends')),
+          ),
+          const SizedBox(height: 12),
           MyButton(onPressed: _startRoom, child: Text(l('startNow'))),
           const SizedBox(height: 12),
           MyButton(onPressed: _leaveRoom, child: Text(l('cancel'))),
@@ -250,6 +289,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
       ),
     );
   }
+
+  // ---- dialogs & sheets ----
 
   void _renameDialog(Session session, L l) {
     final controller = TextEditingController(text: session.user!.name);
@@ -278,6 +319,35 @@ class _OnlineScreenState extends State<OnlineScreen> {
     );
   }
 
+  void _stakeSheet(L l, void Function(int stake) onPicked) {
+    final coins = context.read<Session>().user?.coins ?? 0;
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(l('stake'),
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            for (final stake in stakes)
+              ListTile(
+                enabled: stake <= coins,
+                title: Text(stake == 0 ? l('casual') : '$stake'),
+                leading: Icon(stake == 0 ? Icons.sports_esports : Icons.paid),
+                onTap: () {
+                  Navigator.pop(context);
+                  onPicked(stake);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _sizeDialog(L l) {
     showDialog<void>(
       context: context,
@@ -290,7 +360,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  _createRoom(n);
+                  _stakeSheet(l, (stake) => _createRoom(n, stake));
                 },
                 child: Text('$n'),
               ),
@@ -324,6 +394,147 @@ class _OnlineScreenState extends State<OnlineScreen> {
             child: Text(l('join')),
           ),
         ],
+      ),
+    );
+  }
+
+  void _inviteDialog(Map<String, dynamic> msg) {
+    final l = L(context.read<SettingsController>().lang.value);
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l.fmt('inviteFrom', msg['from'] ?? '?')),
+        content: Text('${l('roomCode')}: ${msg['code']}'
+            '${(msg['stake'] as int? ?? 0) > 0 ? '\n${l('stake')}: ${msg['stake']}' : ''}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(l('decline')),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _joinRoom(msg['code'] as String);
+            },
+            child: Text(l('join')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _dailySheet(Session session, L l) async {
+    Map<String, dynamic> daily;
+    try {
+      daily = await session.client.call('daily');
+    } on NetException catch (e) {
+      setState(() => _error = e.code);
+      return;
+    }
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheet) {
+          Future<void> claim([String? task]) async {
+            try {
+              final resp = await session.client
+                  .call('daily_claim', task == null ? null : {'task': task});
+              session.updateCoins(resp['coins'] as int);
+              daily = await session.client.call('daily');
+              setSheet(() {});
+            } on NetException {
+              // Already claimed or not done; the sheet already shows why.
+            }
+          }
+
+          final tasks =
+              (daily['tasks'] as List? ?? []).cast<Map<String, dynamic>>();
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(l('dailyTitle'),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 18)),
+                ),
+                ListTile(
+                  title: Text(l('dailyBonus')),
+                  subtitle: Text('+${daily['bonus']}'),
+                  trailing: daily['bonus_claimed'] == true
+                      ? Text(l('claimed'))
+                      : FilledButton(
+                          onPressed: () => claim(),
+                          child: Text(l('claim')),
+                        ),
+                ),
+                for (final t in tasks)
+                  ListTile(
+                    title: Text(l('task_${t['id']}')),
+                    subtitle: Text(
+                        '${t['progress']}/${t['goal']} · +${t['reward']}'),
+                    trailing: t['claimed'] == true
+                        ? Text(l('claimed'))
+                        : FilledButton(
+                            onPressed: t['progress'] == t['goal']
+                                ? () => claim(t['id'] as String)
+                                : null,
+                            child: Text(l('claim')),
+                          ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _inviteSheet(L l) async {
+    final session = context.read<Session>();
+    List<Map<String, dynamic>> friends;
+    try {
+      final resp = await session.client.call('friends');
+      friends = (resp['friends'] as List? ?? [])
+          .cast<Map<String, dynamic>>()
+          .where((f) => f['online'] == true)
+          .toList();
+    } on NetException catch (e) {
+      setState(() => _error = e.code);
+      return;
+    }
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: friends.isEmpty
+            ? Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(l.error('friend_offline')),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final f in friends)
+                    ListTile(
+                      title: Text(f['name'] as String),
+                      trailing: TextButton(
+                        onPressed: () {
+                          session.client.call('invite',
+                              {'uid': f['uid']}).catchError((Object e) {
+                            return <String, dynamic>{};
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: Text(l('invite')),
+                      ),
+                    ),
+                ],
+              ),
       ),
     );
   }

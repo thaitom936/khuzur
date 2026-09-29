@@ -41,6 +41,26 @@ function CMD.room_of(uid)
   return uid_room[uid]
 end
 
+function CMD.is_online(uid)
+  return online[uid] ~= nil
+end
+
+--- Pushes a message to a user's live connection, if any.
+function CMD.push_to(uid, msg)
+  local c = online[uid]
+  if not c then return false end
+  skynet.send(c.agent, "lua", "push", c.fd, msg)
+  return true
+end
+
+--- Pre-join info about a friend room (for stake escrow).
+function CMD.room_info(code)
+  local room = codes[code]
+  if not room then return nil, "room_not_found" end
+  local info = rooms[room]
+  return { stake = info.stake or 0, size = info.size }
+end
+
 local function newCode()
   for _ = 1, 100 do
     local code = ("%06d"):format(math.random(0, 999999))
@@ -51,14 +71,14 @@ end
 
 --- Creates a room. players: list of {uid, name, agent, fd} (quick match
 --- passes the full table incl. bots; friend rooms start with the creator).
-function CMD.create_room(mode, size, players)
+function CMD.create_room(mode, size, players, stake)
   local room = skynet.newservice("room")
   local code
   if mode == "friend" then
     code = newCode()
     codes[code] = room
   end
-  rooms[room] = { mode = mode, code = code }
+  rooms[room] = { mode = mode, code = code, stake = stake or 0, size = size }
   for _, p in ipairs(players) do
     if p.uid then uid_room[p.uid] = room end
   end
@@ -66,6 +86,7 @@ function CMD.create_room(mode, size, players)
     mode = mode,
     size = size,
     code = code,
+    stake = stake or 0,
     players = players,
   })
   return room, code

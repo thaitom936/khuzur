@@ -277,12 +277,15 @@ class _TableViewState extends State<TableView> {
               for (final t in trick)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Column(
-                    children: [
-                      Text(_seatName(game, l, t.seat),
-                          style: const TextStyle(fontSize: 11)),
-                      CardView(t.card, width: 44),
-                    ],
+                  child: _Appear(
+                    key: ValueKey('t${t.seat}-${t.card}'),
+                    child: Column(
+                      children: [
+                        Text(_seatName(game, l, t.seat),
+                            style: const TextStyle(fontSize: 11)),
+                        CardView(t.card, width: 44),
+                      ],
+                    ),
                   ),
                 ),
             ],
@@ -331,12 +334,15 @@ class _TableViewState extends State<TableView> {
           for (final card in hand)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: CardView(
-                card,
-                selected: _selected.contains(card),
-                disabled: playing && !legal.contains(card),
-                onTap: () => _onCardTap(game, card,
-                    playing: playing, exchanging: exchanging),
+              child: _Appear(
+                key: ValueKey('h$card-${game.roundNo}'),
+                child: CardView(
+                  card,
+                  selected: _selected.contains(card),
+                  disabled: playing && !legal.contains(card),
+                  onTap: () => _onCardTap(game, card,
+                      playing: playing, exchanging: exchanging),
+                ),
               ),
             ),
         ],
@@ -507,6 +513,15 @@ class _TableViewState extends State<TableView> {
           const SizedBox(height: 8),
           Text(
               '${l('winner')}: ${winners.map((s) => _seatName(game, l, s)).join(', ')}'),
+          if (game is RemoteGameController &&
+              game.winnings[game.humanSeat] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                l.fmt('wonCoins', game.winnings[game.humanSeat]!),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
           const SizedBox(height: 12),
           _scoreTable(game, l),
           const SizedBox(height: 16),
@@ -520,6 +535,30 @@ class _TableViewState extends State<TableView> {
             child: IgnorePointer(child: Confetti(isStopped: false)),
           ),
       ],
+    );
+  }
+}
+
+/// Pop-in animation for newly appearing cards (deals and plays).
+class _Appear extends StatelessWidget {
+  final Widget child;
+
+  const _Appear({required this.child, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutBack,
+      child: child,
+      builder: (context, v, child) => Transform.translate(
+        offset: Offset(0, 14 * (1 - v)),
+        child: Transform.scale(
+          scale: 0.8 + 0.2 * v,
+          child: Opacity(opacity: v.clamp(0.0, 1.0), child: child),
+        ),
+      ),
     );
   }
 }

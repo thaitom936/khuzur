@@ -17,12 +17,14 @@ class UserInfo {
   String name;
   int games;
   int wins;
+  int coins;
 
   UserInfo({
     required this.uid,
     required this.name,
     required this.games,
     required this.wins,
+    required this.coins,
   });
 }
 
@@ -106,9 +108,26 @@ class Session extends ChangeNotifier {
       name: resp['name'] as String,
       games: resp['games'] as int? ?? 0,
       wins: resp['wins'] as int? ?? 0,
+      coins: resp['coins'] as int? ?? 0,
     );
     inRoom = resp['in_room'] == true;
     notifyListeners();
+  }
+
+  void updateCoins(int coins) {
+    user?.coins = coins;
+    notifyListeners();
+  }
+
+  /// Re-reads the coin balance (piggybacks on the daily-state call).
+  Future<void> refreshCoins() async {
+    if (!loggedIn) return;
+    try {
+      final resp = await client.call('daily');
+      updateCoins(resp['coins'] as int? ?? user!.coins);
+    } on NetException {
+      // Balance display refresh only; ignore.
+    }
   }
 
   Future<void> setName(String name) async {
