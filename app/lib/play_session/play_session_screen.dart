@@ -587,7 +587,11 @@ class _TableViewState extends State<TableView> {
   }
 
   Widget _center(GameController game, L l, CardTableMotionState motion) {
-    final trick = game.displayTrick;
+    // Rule: centre cards are shown smallest to largest, without names.
+    final trick = [...game.displayTrick]..sort((a, b) =>
+        rules.rankOf(a.card) != rules.rankOf(b.card)
+            ? rules.rankOf(a.card) - rules.rankOf(b.card)
+            : a.card - b.card);
     final String status;
     if (game.completedTrickWinner != null) {
       status = l.fmt(
@@ -626,11 +630,8 @@ class _TableViewState extends State<TableView> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        _seatName(game, l, t.seat),
-                        style: const TextStyle(fontSize: 11),
-                      ),
                       motion.trickCard(t.card, CardView(t.card, width: 44)),
                     ],
                   ),
