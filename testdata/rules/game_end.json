@@ -2,30 +2,130 @@
   "name": "reaching zero or below ends the game, lowest score wins",
   "players": 2,
   "dealer": 0,
-  "scores": [3, 2],
+  "scores": [
+    3,
+    2
+  ],
   "hands": [
-    ["7C", "8C", "9C", "TC", "JC"],
-    ["AC", "KC", "AD", "AH", "AS"]
+    [
+      "7C",
+      "8C",
+      "9C",
+      "TC",
+      "JC"
+    ],
+    [
+      "AC",
+      "KC",
+      "AD",
+      "AH",
+      "AS"
+    ]
   ],
   "trump": "7S",
   "stock": [],
   "steps": [
-    {"decide": {"seat": 1, "play": true}},
-    {"decide": {"seat": 0, "play": true}},
-    {"exchange": {"seat": 1, "cards": []}},
-    {"exchange": {"seat": 0, "cards": []}},
-
-    {"play": {"seat": 1, "card": "AC"}},
-    {"play": {"seat": 0, "card": "7C"}},
-    {"play": {"seat": 1, "card": "KC"}},
-    {"play": {"seat": 0, "card": "8C"}},
-    {"play": {"seat": 1, "card": "AD"}},
-    {"play": {"seat": 0, "card": "9C"}},
-    {"play": {"seat": 1, "card": "AH"}},
-    {"play": {"seat": 0, "card": "TC"}},
-    {"play": {"seat": 1, "card": "AS"}},
-    {"play": {"seat": 0, "card": "JC"}},
-
-    {"expect": {"phase": "game_end", "scores": [8, -3], "winners": [1]}}
-  ]
+    {
+      "decide": {
+        "seat": 1,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "exchange": {
+        "seat": 1,
+        "cards": []
+      }
+    },
+    {
+      "exchange": {
+        "seat": 0,
+        "cards": []
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "AC"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "7C"
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "KC"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "8C"
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "AD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "9C"
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "AH"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "TC"
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "AS"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "JC"
+      }
+    },
+    {
+      "expect": {
+        "phase": "game_end",
+        "scores": [
+          8,
+          -3
+        ],
+        "winners": [
+          1
+        ]
+      }
+    }
+  ],
+  "config": {
+    "decidePhase": true,
+    "mustBeat": true,
+    "mustOvertrump": true,
+    "noTrickPenalty": 5
+  }
 }

@@ -98,6 +98,8 @@ class CardTableMotionState extends State<CardTableMotion>
       } else if (event.kind == TableMotionKind.deal) {
         _clear();
         _deal();
+      } else if (event.kind == TableMotionKind.collect) {
+        _collect(event.seat!);
       } else {
         _play(event.card!, returning: event.kind == TableMotionKind.returnCard);
       }
@@ -216,10 +218,41 @@ class CardTableMotionState extends State<CardTableMotion>
     });
   }
 
+  /// The completed trick flies to the winner's avatar (每轮结束牌飞向赢家).
+  void _collect(int winner) {
+    final trick = [...widget.game.displayTrick];
+    final to = _seatRect(winner);
+    if (to == null || trick.isEmpty) return;
+    var i = 0;
+    for (final t in trick) {
+      Rect? from;
+      for (final flight in _flights.where((f) => f.card == t.card)) {
+        from = flight.rectAt(_elapsed);
+      }
+      _flights.removeWhere((f) => f.card == t.card);
+      from ??= _rect(_tricks[t.card]);
+      if (from != null) {
+        _hiddenTrick.add(t.card);
+        _add(
+          _Flight(
+            from: from,
+            to: to,
+            card: t.card,
+            kind: TableMotionKind.collect,
+            start: i * 70.0,
+            duration: 340,
+          ),
+        );
+      }
+      i++;
+    }
+  }
+
   void _tick(Duration elapsed) {
     _elapsed = elapsed.inMicroseconds / 1000;
     // Other cards arriving and viewport resizing can move a card's final slot.
     for (final flight in _flights) {
+      if (flight.kind == TableMotionKind.collect) continue;
       final target = flight.kind == TableMotionKind.play
           ? _tricks[flight.card]
           : _hands[flight.card];

@@ -69,6 +69,12 @@ local function checkExpect(state, exp, name, stepNo)
   if exp.trickNo and state.trickNo ~= exp.trickNo then
     fail(name, stepNo, "trickNo " .. state.trickNo .. " ~= " .. exp.trickNo)
   end
+  if exp.trump then
+    local got = engine.cardString(state.trumpCard)
+    if got ~= exp.trump then
+      fail(name, stepNo, "trump " .. got .. " ~= " .. exp.trump)
+    end
+  end
   if exp.tricks then
     for seat, want in ipairs(exp.tricks) do
       local got = state.players[seat].tricks
@@ -127,6 +133,10 @@ local function runCase(case)
       local ok, err
       if step.decide then
         ok, err = engine.decide(state, step.decide.seat + 1, step.decide.play)
+      elseif step.swap then
+        ok, err = engine.swapTrump(state, step.swap.seat + 1)
+      elseif step.skip then
+        ok, err = engine.skipSwap(state, step.skip.seat + 1)
       elseif step.exchange then
         ok, err = engine.exchange(state, step.exchange.seat + 1, step.exchange.cards)
       elseif step.play then

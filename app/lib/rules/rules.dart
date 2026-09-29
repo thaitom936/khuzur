@@ -12,6 +12,10 @@ import 'card.dart';
 class RuleConfig {
   final int startScore;
   final int noTrickPenalty;
+
+  /// With no decide phase everyone always plays (每轮必须出牌).
+  final bool decidePhase;
+  final bool exchangePhase;
   final bool mustFollowSuit;
   final bool mustBeat;
   final bool mustTrump;
@@ -24,10 +28,12 @@ class RuleConfig {
   const RuleConfig({
     this.startScore = 15,
     this.noTrickPenalty = 5,
+    this.decidePhase = true,
+    this.exchangePhase = true,
     this.mustFollowSuit = true,
-    this.mustBeat = true,
+    this.mustBeat = false,
     this.mustTrump = true,
-    this.mustOvertrump = true,
+    this.mustOvertrump = false,
     this.mustPlayAtScore = 1,
     this.minPlayers = 2,
     this.dealerTakesTrump = false,
@@ -39,6 +45,8 @@ class RuleConfig {
     return RuleConfig(
       startScore: json['startScore'] as int? ?? def.startScore,
       noTrickPenalty: json['noTrickPenalty'] as int? ?? def.noTrickPenalty,
+      decidePhase: json['decidePhase'] as bool? ?? def.decidePhase,
+      exchangePhase: json['exchangePhase'] as bool? ?? def.exchangePhase,
       mustFollowSuit: json['mustFollowSuit'] as bool? ?? def.mustFollowSuit,
       mustBeat: json['mustBeat'] as bool? ?? def.mustBeat,
       mustTrump: json['mustTrump'] as bool? ?? def.mustTrump,
@@ -51,7 +59,7 @@ class RuleConfig {
   }
 }
 
-enum Phase { deciding, exchanging, playing, roundEnd, gameEnd }
+enum Phase { deciding, exchanging, swapping, playing, roundEnd, gameEnd }
 
 enum Decision { none, play, pass }
 
@@ -133,7 +141,7 @@ class GameState {
   final int numPlayers;
   final int dealer;
   final List<PlayerState> players;
-  final int trumpCard;
+  int trumpCard; // may change once: the trump seven swaps with the face-up card
   final List<int> stock;
 
   Phase phase = Phase.deciding;
@@ -183,7 +191,7 @@ class GameState {
       if (hand.length != 5) throw ArgumentError('each hand must have 5 cards');
       players.add(PlayerState(hand, scores?[seat] ?? config.startScore));
     }
-    return GameState._(
+    final state = GameState._(
       config: config,
       numPlayers: n,
       dealer: dealer,
@@ -191,6 +199,44 @@ class GameState {
       trumpCard: trumpCard,
       stock: parseAll(stock),
     );
+    if (!config.decidePhase) {
+      // Everyone plays; skip straight to exchanging (or the swap/play).
+      for (final p in state.players) {
+        p.decision = Decision.play;
+      }
+      if (config.exchangePhase) {
+        state.phase = Phase.exchanging;
+        // turn is already the seat left of the dealer.
+      } else {
+        state._enterPlayOrSwap();
+      }
+    }
+    return state;
+  }
+
+  void _startPlaying() {
+    phase = Phase.playing;
+    trickNo = 1;
+    trick = [];
+    turn = _findSeat(_nextSeat(dealer), (q) => q.decision == Decision.play)!;
+  }
+
+  /// After the exchanges: if an active player holds the trump seven they
+  /// get one chance to swap it for the face-up trump card, then play
+  /// starts (顺序: 发牌→参与→换牌→7换主牌).
+  void _enterPlayOrSwap() {
+    final seven = trumpSuit * 16 + 7;
+    if (trumpCard != seven) {
+      for (var seat = 0; seat < numPlayers; seat++) {
+        final p = players[seat];
+        if (p.decision == Decision.play && p.hand.contains(seven)) {
+          phase = Phase.swapping;
+          turn = seat;
+          return;
+        }
+      }
+    }
+    _startPlaying();
   }
 
   int _nextSeat(int seat) => (seat + 1) % numPlayers;
@@ -241,6 +287,29 @@ class GameState {
     return null;
   }
 
+  /// Phase [Phase.swapping]: trade the trump seven for the face-up trump
+  /// card, then play begins.
+  String? swapTrump(int seat) {
+    final err = _checkTurn(Phase.swapping, seat);
+    if (err != null) return err;
+    final seven = trumpSuit * 16 + 7;
+    final p = players[seat];
+    final i = p.hand.indexOf(seven);
+    if (i < 0) return 'no_trump_seven';
+    p.hand[i] = trumpCard;
+    trumpCard = seven;
+    _startPlaying();
+    return null;
+  }
+
+  /// Phase [Phase.swapping]: keep the seven; play begins.
+  String? skipSwap(int seat) {
+    final err = _checkTurn(Phase.swapping, seat);
+    if (err != null) return err;
+    _startPlaying();
+    return null;
+  }
+
   /// Phase [Phase.exchanging]: discard [cards] (card strings, may be empty)
   /// and draw the same number from the stock.
   String? exchange(int seat, List<String> cards) {
@@ -268,10 +337,7 @@ class GameState {
     if (next != null) {
       turn = next;
     } else {
-      phase = Phase.playing;
-      trickNo = 1;
-      trick = [];
-      turn = _findSeat(_nextSeat(dealer), (q) => q.decision == Decision.play)!;
+      _enterPlayOrSwap();
     }
     return null;
   }

@@ -129,7 +129,7 @@ local announceTurn -- forward
 
 local function phaseActive()
   return st and (st.phase == "deciding" or st.phase == "exchanging"
-    or st.phase == "playing")
+    or st.phase == "swapping" or st.phase == "playing")
 end
 
 local function guard(id, fn)
@@ -321,6 +321,17 @@ local function botAct()
     recordAction(seat, "d", play)
     broadcast { push = "decided", seat = seat - 1, play = play }
     postAction()
+  elseif st.phase == "swapping" then
+    -- Swapping the trump seven for the face-up card is always worth it.
+    if engine.swapTrump(st, seat) then
+      recordAction(seat, "t", true)
+      broadcast { push = "trump_swapped", seat = seat - 1,
+        trump = engine.cardString(st.trumpCard) }
+    else
+      engine.skipSwap(st, seat)
+      recordAction(seat, "s", true)
+    end
+    postAction()
   elseif st.phase == "exchanging" then
     local cards = bot.chooseExchange(st, seat)
     if not engine.exchange(st, seat, cards) then
@@ -350,7 +361,8 @@ announceTurn = function()
   turnId = turnId + 1
   local id = turnId
   local timeout = st.phase == "deciding" and T.decide
-    or st.phase == "exchanging" and T.exchange or T.play
+    or (st.phase == "exchanging" or st.phase == "swapping") and T.exchange
+    or T.play
   deadline = skynet.now() + timeout
   broadcast {
     push = "turn",
@@ -547,6 +559,23 @@ function CMD.action(uid, msg)
     if not err then
       recordAction(seat, "d", msg.play and true or false)
       broadcast { push = "decided", seat = seat - 1, play = msg.play and true or false }
+      postAction()
+    end
+  elseif msg.cmd == "swap_trump" then
+    local ok, e = engine.swapTrump(st, seat)
+    err = not ok and e or nil
+    if not err then
+      recordAction(seat, "t", true)
+      broadcast { push = "trump_swapped", seat = seat - 1,
+        trump = engine.cardString(st.trumpCard) }
+      push(p, { push = "exchange_result", hand = handStrings(seat) })
+      postAction()
+    end
+  elseif msg.cmd == "skip_swap" then
+    local ok, e = engine.skipSwap(st, seat)
+    err = not ok and e or nil
+    if not err then
+      recordAction(seat, "s", true)
       postAction()
     end
   elseif msg.cmd == "exchange" then

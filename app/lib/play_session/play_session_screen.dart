@@ -436,7 +436,10 @@ class _TableViewState extends State<TableView> {
         game.phase != Phase.gameEnd;
     final name = game.isLocal ? _seatName(game, l, seat) : s.name;
     final bubble = game.chatBubbles[seat];
-    return Column(
+    // Rule: players who passed sit this round out, dimmed, score unchanged.
+    return Opacity(
+      opacity: s.decision == Decision.pass ? 0.45 : 1,
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
@@ -498,6 +501,9 @@ class _TableViewState extends State<TableView> {
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ),
+              // Won tricks pile up on the avatar (每墩累加显示).
+              if (s.tricks > 0)
+                Positioned(left: 0, bottom: 0, child: _trickPile(s.tricks)),
             ],
           ),
         ),
@@ -514,8 +520,6 @@ class _TableViewState extends State<TableView> {
               ? l('passed')
               : !s.online && !s.bot
               ? l('offline')
-              : s.tricks > 0
-              ? '${s.tricks} ▲'
               : ' ',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -536,6 +540,42 @@ class _TableViewState extends State<TableView> {
             ),
           ),
       ],
+      ),
+    );
+  }
+
+  /// Mini pile of card backs on the avatar showing tricks won so far.
+  Widget _trickPile(int tricks) {
+    final backs = tricks > 4 ? 4 : tricks;
+    return SizedBox(
+      width: 16 + 4.0 * (backs - 1) + 14,
+      height: 24,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var k = 0; k < backs; k++)
+            Positioned(left: k * 4.0, top: 0, child: const CardBack(width: 14)),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xffffd166),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '$tricks',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xff244b43),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -558,6 +598,7 @@ class _TableViewState extends State<TableView> {
       status = switch (game.phase) {
         Phase.deciding => l('decideHint'),
         Phase.exchanging => l.fmt('exchangeHint', game.maxExchangeNow),
+        Phase.swapping => l('swapHint'),
         Phase.playing => l('yourTurn') + _countdown(game),
         _ => '',
       };
@@ -565,6 +606,7 @@ class _TableViewState extends State<TableView> {
         game.turn < game.seats.length &&
         (game.phase == Phase.deciding ||
             game.phase == Phase.exchanging ||
+            game.phase == Phase.swapping ||
             game.phase == Phase.playing)) {
       status =
           l.fmt('thinking', _seatName(game, l, game.turn)) + _countdown(game);
@@ -724,6 +766,32 @@ class _TableViewState extends State<TableView> {
                 ? l('keepAll')
                 : '${l('exchangeN')} ${_selected.length}',
           ),
+        );
+      case Phase.swapping:
+        // Rule: after the exchanges, the trump-seven holder may trade it
+        // for the face-up trump card.
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _tableButton(
+              onPressed: () {
+                audio.playSfx(SfxType.buttonTap);
+                game.swapTrump();
+              },
+              child: Text('${l('swapSeven')} '
+                  '${rankLabel(game.trumpCard)}${suitSymbols[rules.suitOf(game.trumpCard)]}'),
+            ),
+            const SizedBox(height: 12),
+            _tableButton(
+              danger: true,
+              onPressed: () {
+                audio.playSfx(SfxType.buttonTap);
+                game.skipSwap();
+              },
+              child: Text(l('keepSeven')),
+            ),
+          ],
         );
       case Phase.playing:
         return const SizedBox.shrink();

@@ -71,6 +71,10 @@ class ReplayController extends GameController {
     switch (a['c'] as String) {
       case 'd':
         err = state.decide(seat, a['v'] == true);
+      case 't':
+        err = state.swapTrump(seat);
+      case 's':
+        err = state.skipSwap(seat);
       case 'e':
         err = state.exchange(seat, (a['v'] as List? ?? []).cast<String>());
       case 'p':

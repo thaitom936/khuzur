@@ -3,52 +3,296 @@
   "players": 3,
   "dealer": 0,
   "hands": [
-    ["KH", "9H", "TC", "AH", "7D"],
-    ["TH", "9C", "JC", "AD", "QD"],
-    ["8C", "QC", "9S", "KS", "JS"]
+    [
+      "KH",
+      "9H",
+      "TC",
+      "AH",
+      "7D"
+    ],
+    [
+      "TH",
+      "9C",
+      "JC",
+      "AD",
+      "QD"
+    ],
+    [
+      "8C",
+      "QC",
+      "9S",
+      "KS",
+      "JS"
+    ]
   ],
   "trump": "7C",
   "stock": [],
   "steps": [
-    {"decide": {"seat": 1, "play": true}},
-    {"decide": {"seat": 2, "play": true}},
-    {"decide": {"seat": 0, "play": true}},
-    {"exchange": {"seat": 1, "cards": []}},
-    {"exchange": {"seat": 2, "cards": []}},
-    {"exchange": {"seat": 0, "cards": []}},
-
-    {"play": {"seat": 1, "card": "TH"}},
-    {"legal": {"seat": 2, "cards": ["8C", "QC"]}},
-    {"play": {"seat": 2, "card": "8C"}},
-    {"legal": {"seat": 0, "cards": ["9H", "KH", "AH"]}},
-    {"play": {"seat": 0, "card": "KH"}},
-    {"expect": {"turn": 2, "trickNo": 2, "tricks": [0, 0, 1]}},
-
-    {"play": {"seat": 2, "card": "9S"}},
-    {"legal": {"seat": 0, "cards": ["TC"]}},
-    {"play": {"seat": 0, "card": "TC"}},
-    {"legal": {"seat": 1, "cards": ["JC"]}},
-    {"play": {"seat": 1, "card": "9C"}, "error": "illegal_card"},
-    {"play": {"seat": 1, "card": "JC"}},
-    {"expect": {"turn": 1, "trickNo": 3, "tricks": [0, 1, 1]}},
-
-    {"play": {"seat": 1, "card": "AD"}},
-    {"legal": {"seat": 2, "cards": ["QC"]}},
-    {"play": {"seat": 2, "card": "QC"}},
-    {"legal": {"seat": 0, "cards": ["7D"]}},
-    {"play": {"seat": 0, "card": "7D"}},
-    {"expect": {"turn": 2, "trickNo": 4, "tricks": [0, 1, 2]}},
-
-    {"play": {"seat": 2, "card": "KS"}},
-    {"legal": {"seat": 0, "cards": ["9H", "AH"]}},
-    {"play": {"seat": 0, "card": "9H"}},
-    {"legal": {"seat": 1, "cards": ["9C"]}},
-    {"play": {"seat": 1, "card": "9C"}},
-    {"expect": {"turn": 1, "trickNo": 5, "tricks": [0, 2, 2]}},
-
-    {"play": {"seat": 1, "card": "QD"}},
-    {"play": {"seat": 2, "card": "JS"}},
-    {"play": {"seat": 0, "card": "AH"}},
-    {"expect": {"phase": "round_end", "tricks": [0, 3, 2], "scores": [20, 12, 13]}}
-  ]
+    {
+      "decide": {
+        "seat": 1,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 2,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "exchange": {
+        "seat": 1,
+        "cards": []
+      }
+    },
+    {
+      "exchange": {
+        "seat": 2,
+        "cards": []
+      }
+    },
+    {
+      "exchange": {
+        "seat": 0,
+        "cards": []
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "TH"
+      }
+    },
+    {
+      "legal": {
+        "seat": 2,
+        "cards": [
+          "8C",
+          "QC"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "8C"
+      }
+    },
+    {
+      "legal": {
+        "seat": 0,
+        "cards": [
+          "9H",
+          "KH",
+          "AH"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "KH"
+      }
+    },
+    {
+      "expect": {
+        "turn": 2,
+        "trickNo": 2,
+        "tricks": [
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "9S"
+      }
+    },
+    {
+      "legal": {
+        "seat": 0,
+        "cards": [
+          "TC"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "TC"
+      }
+    },
+    {
+      "legal": {
+        "seat": 1,
+        "cards": [
+          "JC"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "9C"
+      },
+      "error": "illegal_card"
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "JC"
+      }
+    },
+    {
+      "expect": {
+        "turn": 1,
+        "trickNo": 3,
+        "tricks": [
+          0,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "AD"
+      }
+    },
+    {
+      "legal": {
+        "seat": 2,
+        "cards": [
+          "QC"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "QC"
+      }
+    },
+    {
+      "legal": {
+        "seat": 0,
+        "cards": [
+          "7D"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "7D"
+      }
+    },
+    {
+      "expect": {
+        "turn": 2,
+        "trickNo": 4,
+        "tricks": [
+          0,
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "KS"
+      }
+    },
+    {
+      "legal": {
+        "seat": 0,
+        "cards": [
+          "9H",
+          "AH"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "9H"
+      }
+    },
+    {
+      "legal": {
+        "seat": 1,
+        "cards": [
+          "9C"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "9C"
+      }
+    },
+    {
+      "expect": {
+        "turn": 1,
+        "trickNo": 5,
+        "tricks": [
+          0,
+          2,
+          2
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "QD"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "JS"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "AH"
+      }
+    },
+    {
+      "expect": {
+        "phase": "round_end",
+        "tricks": [
+          0,
+          3,
+          2
+        ],
+        "scores": [
+          20,
+          12,
+          13
+        ]
+      }
+    }
+  ],
+  "config": {
+    "decidePhase": true,
+    "mustBeat": true,
+    "mustOvertrump": true,
+    "noTrickPenalty": 5
+  }
 }

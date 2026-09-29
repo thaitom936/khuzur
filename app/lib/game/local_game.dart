@@ -112,6 +112,7 @@ class LocalGameController extends GameController {
   bool get _phaseActive =>
       state.phase == Phase.deciding ||
       state.phase == Phase.exchanging ||
+      state.phase == Phase.swapping ||
       state.phase == Phase.playing;
 
   /// Whether the human may pass right now (mirrors the engine's checks so
@@ -143,6 +144,24 @@ class LocalGameController extends GameController {
   void exchange(List<String> cards) {
     if (!humanTurn) return;
     if (state.exchange(humanSeat, cards) == null) {
+      notifyListeners();
+      _runBots();
+    }
+  }
+
+  @override
+  void swapTrump() {
+    if (!humanTurn) return;
+    if (state.swapTrump(humanSeat) == null) {
+      notifyListeners();
+      _runBots();
+    }
+  }
+
+  @override
+  void skipSwap() {
+    if (!humanTurn) return;
+    if (state.skipSwap(humanSeat) == null) {
       notifyListeners();
       _runBots();
     }
@@ -194,6 +213,7 @@ class LocalGameController extends GameController {
           completedTrickWinner = s;
         }
       }
+      _scheduleCollect(completedTrickWinner!);
       Timer(trickPause, () {
         if (_disposed) return;
         completedTrick = null;
@@ -202,6 +222,15 @@ class LocalGameController extends GameController {
       });
     }
     return err;
+  }
+
+  /// After a short look at the full trick, the cards fly to the winner.
+  void _scheduleCollect(int winner) {
+    Timer(const Duration(milliseconds: 380), () {
+      if (_disposed || completedTrickWinner != winner) return;
+      tableMotion = TableMotionEvent(TableMotionKind.collect, null, winner);
+      notifyListeners();
+    });
   }
 
   Future<void> _runBots() async {
@@ -231,6 +260,11 @@ class LocalGameController extends GameController {
           state.decide(seat, true);
         } else if (state.decide(seat, false) != null) {
           state.decide(seat, true); // passing was illegal, forced to play
+        }
+      case Phase.swapping:
+        // Swapping the trump seven for the face-up card is always worth it.
+        if (state.swapTrump(seat) != null) {
+          state.skipSwap(seat);
         }
       case Phase.exchanging:
         final cards = _bot.chooseExchange(state, seat);

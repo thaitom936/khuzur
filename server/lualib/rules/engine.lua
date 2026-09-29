@@ -35,10 +35,12 @@ function M.defaultConfig()
   return {
     startScore = 15,
     noTrickPenalty = 5,
+    decidePhase = true,    -- deal, then each player opts in or passes
+    exchangePhase = true,
     mustFollowSuit = true,
-    mustBeat = true,
+    mustBeat = false,      -- follow suit, no need to beat
     mustTrump = true,
-    mustOvertrump = true,
+    mustOvertrump = false, -- any trump will do when void
     mustPlayAtScore = 1,
     minPlayers = 2,
     dealerTakesTrump = false,
@@ -95,7 +97,53 @@ function M.newRound(args)
     seen[c] = true
     state.stock[#state.stock + 1] = c
   end
+
+  if not config.decidePhase then
+    -- Everyone plays; skip straight to exchanging (or the swap/play).
+    for _, p in ipairs(state.players) do
+      p.decision = "play"
+    end
+    if config.exchangePhase then
+      state.phase = "exchanging"
+      -- turn is already the seat left of the dealer.
+    else
+      M.enterPlayOrSwap(state)
+    end
+  end
   return state
+end
+
+local function startPlaying(state)
+  state.phase = "playing"
+  state.trickNo = 1
+  state.trick = {}
+  local s = state.dealer % state.numPlayers + 1
+  for _ = 1, state.numPlayers do
+    if state.players[s].decision == "play" then break end
+    s = s % state.numPlayers + 1
+  end
+  state.turn = s
+end
+
+--- After the exchanges: if an active player holds the trump seven they
+--- get one chance to swap it for the face-up trump card, then play
+--- starts (顺序: 发牌→参与→换牌→7换主牌).
+function M.enterPlayOrSwap(state)
+  local seven = state.trumpSuit * 16 + 7
+  if state.trumpCard ~= seven then
+    for seat, p in ipairs(state.players) do
+      if p.decision == "play" then
+        for _, c in ipairs(p.hand) do
+          if c == seven then
+            state.phase = "swapping"
+            state.turn = seat
+            return
+          end
+        end
+      end
+    end
+  end
+  startPlaying(state)
 end
 
 --- Shuffles the 32-card deck and creates a round: 5 cards each, one
@@ -197,6 +245,32 @@ function M.decide(state, seat, play)
   return true
 end
 
+--- Phase "swapping": trade the trump seven for the face-up trump card,
+--- then play begins.
+function M.swapTrump(state, seat)
+  local ok, err = checkTurn(state, "swapping", seat)
+  if not ok then return nil, err end
+  local seven = state.trumpSuit * 16 + 7
+  local p = state.players[seat]
+  for i, c in ipairs(p.hand) do
+    if c == seven then
+      p.hand[i] = state.trumpCard
+      state.trumpCard = seven
+      startPlaying(state)
+      return true
+    end
+  end
+  return nil, "no_trump_seven"
+end
+
+--- Phase "swapping": keep the seven; play begins.
+function M.skipSwap(state, seat)
+  local ok, err = checkTurn(state, "swapping", seat)
+  if not ok then return nil, err end
+  startPlaying(state)
+  return true
+end
+
 --- Phase "exchanging": discard `cards` (list of card strings, may be empty)
 --- and draw the same number from the stock.
 function M.exchange(state, seat, cards)
@@ -234,11 +308,7 @@ function M.exchange(state, seat, cards)
   if nxt then
     state.turn = nxt
   else
-    state.phase = "playing"
-    state.trickNo = 1
-    state.trick = {}
-    state.turn = findSeat(state, state.dealer % state.numPlayers + 1,
-      function(q) return q.decision == "play" end)
+    M.enterPlayOrSwap(state)
   end
   return true
 end

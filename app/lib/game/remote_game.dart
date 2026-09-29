@@ -133,6 +133,7 @@ class RemoteGameController extends GameController {
       turn == humanSeat &&
       (phase == Phase.deciding ||
           phase == Phase.exchanging ||
+          phase == Phase.swapping ||
           phase == Phase.playing);
 
   @override
@@ -190,6 +191,12 @@ class RemoteGameController extends GameController {
   }
 
   @override
+  void swapTrump() => _send('swap_trump');
+
+  @override
+  void skipSwap() => _send('skip_swap');
+
+  @override
   void sendChat(int phraseId) => _send('chat', {'phrase': phraseId});
 
   @override
@@ -227,6 +234,7 @@ class RemoteGameController extends GameController {
   static const _phases = {
     'deciding': Phase.deciding,
     'exchanging': Phase.exchanging,
+    'swapping': Phase.swapping,
     'playing': Phase.playing,
     'round_end': Phase.roundEnd,
     'game_end': Phase.gameEnd,
@@ -355,6 +363,8 @@ class RemoteGameController extends GameController {
         stockCount = (stockCount - count).clamp(0, 32);
       case 'exchange_result':
         hand = [for (final c in msg['hand'] as List) parseCard(c as String)];
+      case 'trump_swapped':
+        trumpCard = parseCard(msg['trump'] as String);
       case 'played':
         final seat = msg['seat'] as int;
         final card = parseCard(msg['card'] as String);
@@ -379,6 +389,12 @@ class RemoteGameController extends GameController {
         completedTrickWinner = winner;
         trick = [];
         _updateSeat(winner, tricks: seats[winner].tricks + 1);
+        // After a short look at the full trick, the cards fly to the winner.
+        Timer(const Duration(milliseconds: 380), () {
+          if (_disposed || completedTrickWinner != winner) return;
+          tableMotion = TableMotionEvent(TableMotionKind.collect, null, winner);
+          notifyListeners();
+        });
         Timer(trickPause, () {
           if (_disposed) return;
           completedTrick = null;

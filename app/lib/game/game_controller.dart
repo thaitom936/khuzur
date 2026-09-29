@@ -4,6 +4,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import '../rules/card.dart';
 import '../rules/rules.dart';
 
 class SeatView {
@@ -78,16 +79,31 @@ abstract class GameController extends ChangeNotifier {
   void decide(bool play);
   void exchange(List<String> cards);
   void play(String card);
+
+  /// Swap phase: trade the trump seven for the face-up trump card.
+  void swapTrump() {}
+
+  /// Swap phase: keep the seven instead.
+  void skipSwap() {}
   void nextRound() {}
   void sendChat(int phraseId) {}
   void setAuto(bool on) {}
+
+  /// Whether the swap decision is ours right now.
+  bool get canSwapTrump =>
+      humanTurn &&
+      phase == Phase.swapping &&
+      hand.contains(suitOf(trumpCard) * 16 + 7);
 }
 
-enum TableMotionKind { deal, play, returnCard, reset }
+enum TableMotionKind { deal, play, returnCard, collect, reset }
 
 class TableMotionEvent {
   final TableMotionKind kind;
   final TrickCard? card;
 
-  TableMotionEvent(this.kind, [this.card]);
+  /// For [TableMotionKind.collect]: the seat the trick flies to.
+  final int? seat;
+
+  TableMotionEvent(this.kind, [this.card, this.seat]);
 }

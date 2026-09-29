@@ -1,0 +1,22 @@
+{
+  "name": "the trump-seven holder may keep it; the face-up card stays",
+  "players": 2,
+  "dealer": 0,
+  "hands": [
+    ["AC", "KC", "QC", "JC", "TH"],
+    ["9C", "8C", "AD", "7H", "7D"]
+  ],
+  "trump": "KH",
+  "stock": [],
+  "steps": [
+    {"decide": {"seat": 1, "play": true}},
+    {"decide": {"seat": 0, "play": true}},
+    {"exchange": {"seat": 1, "cards": []}},
+    {"exchange": {"seat": 0, "cards": []}},
+    {"expect": {"phase": "swapping", "turn": 1}},
+    {"skip": {"seat": 0}, "error": "not_your_turn"},
+    {"skip": {"seat": 1}},
+    {"expect": {"phase": "playing", "turn": 1, "trump": "KH",
+                "hand": {"seat": 1, "cards": ["9C", "8C", "AD", "7H", "7D"]}}}
+  ]
+}

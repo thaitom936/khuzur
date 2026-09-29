@@ -68,6 +68,10 @@ void _runCase(Map<String, dynamic> c) {
       if (step.containsKey('decide')) {
         final a = step['decide'] as Map<String, dynamic>;
         err = state.decide(a['seat'] as int, a['play'] as bool);
+      } else if (step.containsKey('swap')) {
+        err = state.swapTrump((step['swap'] as Map)['seat'] as int);
+      } else if (step.containsKey('skip')) {
+        err = state.skipSwap((step['skip'] as Map)['seat'] as int);
       } else if (step.containsKey('exchange')) {
         final a = step['exchange'] as Map<String, dynamic>;
         err = state.exchange(a['seat'] as int, _strings(a['cards']));
@@ -85,6 +89,7 @@ void _runCase(Map<String, dynamic> c) {
 const _phaseNames = {
   Phase.deciding: 'deciding',
   Phase.exchanging: 'exchanging',
+  Phase.swapping: 'swapping',
   Phase.playing: 'playing',
   Phase.roundEnd: 'round_end',
   Phase.gameEnd: 'game_end',
@@ -99,6 +104,9 @@ void _checkExpect(GameState state, Map<String, dynamic> exp, String where) {
   }
   if (exp.containsKey('trickNo')) {
     expect(state.trickNo, exp['trickNo'], reason: '$where trickNo');
+  }
+  if (exp.containsKey('trump')) {
+    expect(cardString(state.trumpCard), exp['trump'], reason: '$where trump');
   }
   if (exp.containsKey('tricks')) {
     expect([for (final p in state.players) p.tricks], exp['tricks'],
