@@ -239,6 +239,11 @@ class _OnlineScreenState extends State<OnlineScreen> {
           ),
           const SizedBox(height: 12),
           MyButton(
+            onPressed: () => GoRouter.of(context).push('/online/replays'),
+            child: Text(l('replays')),
+          ),
+          const SizedBox(height: 12),
+          MyButton(
             onPressed: () => GoRouter.of(context).push('/online/rank'),
             child: Text(l('leaderboard')),
           ),

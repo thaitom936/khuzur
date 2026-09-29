@@ -13,6 +13,7 @@ import '../audio/sounds.dart';
 import '../game/game_controller.dart';
 import '../game/local_game.dart';
 import '../game/remote_game.dart';
+import '../game/replay_controller.dart';
 import '../l10n/strings.dart';
 import '../rules/card.dart' as rules;
 import '../rules/rules.dart';
@@ -88,6 +89,9 @@ class _TableViewState extends State<TableView> {
       _selected.clear();
     }
 
+    final isReplay = game is ReplayController;
+    final spectating = game is RemoteGameController && game.spectating;
+
     return Scaffold(
       backgroundColor: palette.backgroundPlaySession,
       body: SafeArea(
@@ -96,30 +100,74 @@ class _TableViewState extends State<TableView> {
             Column(
               children: [
                 _topBar(game, l),
+                if (spectating)
+                  Text(l('spectating'),
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 _opponents(game, l),
                 Expanded(child: _center(game, l)),
                 if (game.autoPlaying) _autoBanner(game, l),
                 _seatPanelRow(game, l),
                 _hand(game),
-                SizedBox(height: 96, child: Center(child: _actions(game, l))),
+                SizedBox(
+                  height: 96,
+                  child: Center(
+                    child: isReplay
+                        ? _replayControls(game)
+                        : _actions(game, l),
+                  ),
+                ),
               ],
             ),
-            if (game.phase == Phase.roundEnd) _roundEndOverlay(game, l),
-            if (game.phase == Phase.gameEnd) _gameEndOverlay(game, l),
+            if (!isReplay && game.phase == Phase.roundEnd)
+              _roundEndOverlay(game, l),
+            if (!isReplay && !spectating && game.phase == Phase.gameEnd)
+              _gameEndOverlay(game, l),
           ],
         ),
       ),
     );
   }
 
+  Widget _replayControls(ReplayController game) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.skip_previous),
+          onPressed: game.stepBack,
+        ),
+        IconButton(
+          icon: Icon(game.autoPlay ? Icons.pause : Icons.play_arrow),
+          onPressed: game.toggleAuto,
+        ),
+        IconButton(
+          icon: const Icon(Icons.skip_next),
+          onPressed: game.atEnd ? null : game.stepForward,
+        ),
+        const SizedBox(width: 12),
+        Text('R${game.roundNo}'),
+        if (game.desyncError != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Text('⚠ ${game.desyncError}',
+                style: const TextStyle(color: Colors.red, fontSize: 11)),
+          ),
+      ],
+    );
+  }
+
   void _leave(GameController game) {
     if (game is RemoteGameController) {
-      if (game.started && !game.gameOver) {
+      if (game.spectating) {
+        game.unwatch();
+      } else if (game.started && !game.gameOver) {
         game.suspended = true; // stay seated; auto-play covers the turns
       } else {
         game.leaveRoom();
       }
+      GoRouter.of(context).go('/online');
+    } else if (game is ReplayController) {
       GoRouter.of(context).go('/online');
     } else {
       GoRouter.of(context).go('/');
@@ -176,7 +224,9 @@ class _TableViewState extends State<TableView> {
   }
 
   Widget _seatPanelRow(GameController game, L l) {
-    if (game.seats.isEmpty) return const SizedBox.shrink();
+    if (game.seats.isEmpty || game.humanSeat < 0) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: _seatPanel(game, l, game.humanSeat),

@@ -84,6 +84,17 @@ class _FriendsScreenState extends State<FriendsScreen> {
     _load();
   }
 
+  Future<void> _watch(int uid) async {
+    try {
+      await context.read<Session>().client.call('watch', {'uid': uid});
+      // The snapshot push flips the game controller to "started"; the
+      // lobby below this screen navigates to the table automatically.
+      if (mounted) GoRouter.of(context).pop();
+    } on NetException catch (e) {
+      if (mounted) setState(() => _notice = e.code);
+    }
+  }
+
   Future<void> _remove(int uid) async {
     try {
       await context.read<Session>().client.call('friend_remove', {'uid': uid});
@@ -168,9 +179,19 @@ class _FriendsScreenState extends State<FriendsScreen> {
                         color: f['online'] == true ? Colors.green : Colors.grey,
                       ),
                       title: Text('${f['name']} (${f['uid']})'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.person_remove, size: 18),
-                        onPressed: () => _remove(f['uid'] as int),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (f['in_room'] == true)
+                            TextButton(
+                              onPressed: () => _watch(f['uid'] as int),
+                              child: Text(l('watch')),
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.person_remove, size: 18),
+                            onPressed: () => _remove(f['uid'] as int),
+                          ),
+                        ],
                       ),
                     ),
                 ],

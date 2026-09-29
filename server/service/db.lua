@@ -399,6 +399,54 @@ function CMD.daily_claim_task(uid, id)
   return nil, "bad_task"
 end
 
+---------------------------------------------------------------- replays
+
+local REPLAY_TTL = 30 * 86400
+local REPLAYS_PER_USER = 10
+
+--- Stores a finished game's record and indexes it for its players.
+function CMD.save_replay(uids, record)
+  local json = require "json"
+  local id = red:incr("replay:seq")
+  record.id = id
+  record.ts = os.time()
+  red:setex("replay:" .. id, REPLAY_TTL, json.encode(record))
+  local meta = json.encode {
+    id = id,
+    ts = record.ts,
+    mode = record.mode,
+    size = record.size,
+    stake = record.stake,
+    names = record.names,
+    winners = record.winners,
+  }
+  red:setex("replaymeta:" .. id, REPLAY_TTL, meta)
+  for _, uid in ipairs(uids) do
+    local key = "replays:" .. uid
+    red:lpush(key, id)
+    red:ltrim(key, 0, REPLAYS_PER_USER - 1)
+    red:expire(key, REPLAY_TTL)
+  end
+  return id
+end
+
+function CMD.replay_list(uid)
+  local json = require "json"
+  local ids = red:lrange("replays:" .. uid, 0, REPLAYS_PER_USER - 1)
+  local out = {}
+  for _, id in ipairs(ids) do
+    local meta = red:get("replaymeta:" .. id)
+    if meta then out[#out + 1] = json.decode(meta) end
+  end
+  return out
+end
+
+function CMD.replay_get(id)
+  local raw = red:get("replay:" .. tonumber(id))
+  if not raw then return nil, "replay_not_found" end
+  return raw -- already JSON; forwarded verbatim
+end
+
 --- Bumps the daily counters after a game (humans only).
 function dailyProgress(uid, win, tricks)
   local key = dailyKey(uid)

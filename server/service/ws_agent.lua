@@ -204,8 +204,45 @@ HANDLERS.friends = authed(function(fd, c, msg)
   local list = skynet.call(".db", "lua", "friend_list", c.uid)
   for _, f in ipairs(list.friends) do
     f.online = skynet.call(".hub", "lua", "is_online", f.uid)
+    f.in_room = f.online
+        and skynet.call(".hub", "lua", "room_of", f.uid) ~= nil or false
   end
   return list
+end)
+
+---------------------------------------------------------------- spectate
+
+--- Watches the ongoing game of a friend.
+HANDLERS.watch = authed(function(fd, c, msg)
+  local fuid = tonumber(msg.uid)
+  local room = fuid and skynet.call(".hub", "lua", "room_of", fuid)
+  if not room then return nil, "not_in_room" end
+  skynet.call(room, "lua", "watch",
+    { uid = c.uid, agent = skynet.self(), fd = fd })
+  c.watching = room
+  return {}
+end)
+
+HANDLERS.unwatch = authed(function(fd, c, msg)
+  if c.watching then
+    skynet.send(c.watching, "lua", "unwatch", c.uid)
+    c.watching = nil
+  end
+  return {}
+end)
+
+---------------------------------------------------------------- replays
+
+HANDLERS.replays = authed(function(fd, c, msg)
+  return { list = skynet.call(".db", "lua", "replay_list", c.uid) }
+end)
+
+--- The replay field is a JSON string (decode it client-side).
+HANDLERS.replay = authed(function(fd, c, msg)
+  local raw, err = skynet.call(".db", "lua", "replay_get",
+    tonumber(msg.id) or 0)
+  if not raw then return nil, err end
+  return { replay = raw }
 end)
 
 HANDLERS.friend_add = authed(function(fd, c, msg)
@@ -303,6 +340,9 @@ end
 function handle.close(fd, code, reason)
   local c = conns[fd]
   conns[fd] = nil
+  if c and c.watching then
+    skynet.send(c.watching, "lua", "unwatch", c.uid)
+  end
   if c and c.uid then
     skynet.send(".hub", "lua", "offline", c.uid, skynet.self(), fd)
   end

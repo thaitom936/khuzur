@@ -319,6 +319,92 @@ local function scenario_coins_and_daily()
   websocket.close(b.id)
 end
 
+local function scenario_spectate_and_replay()
+  local a = connect("SA")
+  local b = connect("SB")
+  local w = connect("SW")
+  local ra = a:call { cmd = "login", device = "e2e-device-s-aa", name = "Sa" }
+  local rb = b:call { cmd = "login", device = "e2e-device-s-bb", name = "Sb" }
+  local rw = w:call { cmd = "login", device = "e2e-device-s-ww", name = "Sw" }
+  check(not (ra.err or rb.err or rw.err), "spectate logins failed")
+
+  local r = a:call { cmd = "quick_match", size = 2 }
+  check(not r.err, "A match: " .. tostring(r.err))
+  r = b:call { cmd = "quick_match", size = 2 }
+  check(not r.err, "B match: " .. tostring(r.err))
+  a:waitPush("game_start")
+  b:waitPush("game_start")
+
+  -- W watches A's game: snapshot without a hand, then live pushes.
+  r = w:call { cmd = "watch", uid = ra.uid }
+  check(not r.err, "watch: " .. tostring(r.err))
+  local snap = w:waitPush("snapshot")
+  check(snap.you == -1 and snap.hand == nil and #snap.seats == 2,
+    "bad spectator snapshot")
+
+  local done = 0
+  local function drive(cl)
+    skynet.fork(function()
+      cl:playUntilGameEnd()
+      done = done + 1
+    end)
+  end
+  drive(a)
+  drive(b)
+  -- The watcher also sees the game end, without ever acting.
+  local wEnd = w:waitPush("game_end")
+  check(type(wEnd.winners) == "table", "watcher missed game_end")
+  while done < 2 do skynet.sleep(10) end
+
+  -- Replay: listed for both players, loadable, and structurally sound.
+  skynet.sleep(20) -- allow the async save to land
+  r = a:call { cmd = "replays" }
+  check(not r.err and #r.list >= 1, "replay list empty")
+  local meta = r.list[1]
+  check(meta.size == 2 and type(meta.names) == "table", "bad replay meta")
+  r = a:call { cmd = "replay", id = meta.id }
+  check(not r.err and type(r.replay) == "string", "replay fetch failed")
+  local rec = json.decode(r.replay)
+  check(#rec.rounds >= 1 and #rec.rounds[1].hands == 2
+    and #rec.rounds[1].hands[1] == 5 and #rec.rounds[1].actions > 0,
+    "bad replay record")
+
+  -- Replay the whole record through the engine (what the client's replay
+  -- viewer does): every recorded action must be accepted.
+  local engine = require "rules.engine"
+  local steps = 0
+  for ri, round in ipairs(rec.rounds) do
+    local rst = engine.newRound {
+      players = rec.size,
+      dealer = round.dealer + 1,
+      hands = round.hands,
+      trump = round.trump,
+      stock = round.stock,
+      config = rec.config,
+      scores = round.scores,
+    }
+    for ai, act in ipairs(round.actions) do
+      local ok2, aerr
+      if act.c == "d" then
+        ok2, aerr = engine.decide(rst, act.s + 1, act.v and true or false)
+      elseif act.c == "e" then
+        ok2, aerr = engine.exchange(rst, act.s + 1, act.v or {})
+      else
+        ok2, aerr = engine.play(rst, act.s + 1, act.v)
+      end
+      check(ok2, ("replay desync r%d a%d: %s"):format(ri, ai, tostring(aerr)))
+      steps = steps + 1
+    end
+    check(rst.phase == "round_end" or rst.phase == "game_end",
+      "round " .. ri .. " incomplete after replay")
+  end
+  skynet.error("E2E spectate_and_replay OK (" .. #rec.rounds .. " rounds, "
+    .. steps .. " steps re-verified)")
+  websocket.close(a.id)
+  websocket.close(b.id)
+  websocket.close(w.id)
+end
+
 ---------------------------------------------------------------- boot & run
 
 skynet.start(function()
@@ -342,6 +428,7 @@ skynet.start(function()
     scenario_friend_room_two_humans()
     scenario_friends_and_invite()
     scenario_coins_and_daily()
+    scenario_spectate_and_replay()
   end)
   if ok and not failed then
     skynet.error("E2E PASS")

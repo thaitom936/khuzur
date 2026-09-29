@@ -2,10 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import 'game/game_controller.dart';
+import 'game/replay_controller.dart';
 import 'main_menu/main_menu_screen.dart';
+import 'net/session.dart';
 import 'online/friends_screen.dart';
 import 'online/online_screen.dart';
 import 'online/rank_screen.dart';
+import 'online/replays_screen.dart';
 import 'play_session/play_session_screen.dart';
 import 'settings/settings_screen.dart';
 import 'style/my_transition.dart';
@@ -47,6 +51,25 @@ final router = GoRouter(
               path: 'friends',
               builder: (context, state) =>
                   const FriendsScreen(key: Key('friends')),
+            ),
+            GoRoute(
+              path: 'replays',
+              builder: (context, state) =>
+                  const ReplaysScreen(key: Key('replays')),
+            ),
+            GoRoute(
+              path: 'replay',
+              builder: (context, state) {
+                final record = state.extra! as Map<String, dynamic>;
+                return ChangeNotifierProvider<GameController>(
+                  key: const Key('replay viewer'),
+                  create: (context) => ReplayController(
+                    record,
+                    viewerUid: context.read<Session>().user?.uid,
+                  ),
+                  child: const TableView(),
+                );
+              },
             ),
           ],
         ),

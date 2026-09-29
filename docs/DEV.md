@@ -66,3 +66,11 @@ WebSocket 文本帧，JSON。请求 `{seq, cmd, ...}`，响应 `{seq, cmd, err?,
   金币场至少 2 个真人才会补机器人开局
 - 好友：申请/接受模型（friend 表双向行）；invite 命令把房间号推给在线好友
 - 新增客户端页面：好友（/online/friends）、每日奖励弹层、门票选择弹层
+
+## 观战与回放（2026-09-29 增补）
+
+- 观战：好友列表中在局的好友显示"观战"；watch/unwatch 命令；
+  观战者收到全部广播但永远拿不到手牌（snapshot you=-1）
+- 回放：room 全程录像（每局发牌 + 每步动作），game_end 存 redis 30 天，
+  每人保留最近 10 场；客户端用本地 Dart 规则引擎逐步重放（replay_controller.dart），
+  录像格式的正确性由 e2e 用 Lua 引擎整场重放校验

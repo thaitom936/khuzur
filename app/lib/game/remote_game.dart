@@ -64,6 +64,14 @@ class RemoteGameController extends GameController {
   Map<int, int> winnings = {};
   int stake = 0;
 
+  /// True when watching someone else's game (snapshot with you = -1).
+  bool get spectating => humanSeat < 0;
+
+  void unwatch() {
+    _send('unwatch');
+    reset();
+  }
+
   RuleConfig config = const RuleConfig();
   bool started = false;
   bool gameOver = false;

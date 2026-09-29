@@ -17,6 +17,11 @@ local dealerSeat = 1
 local turnId = 0
 local deadline = 0      -- absolute, in centiseconds (skynet.now())
 local totalTricks = {}  -- seat -> tricks across the whole game
+local watchers = {}     -- uid -> {uid, agent, fd}
+
+-- Full game record for replays: every deal and every action.
+local record = { rounds = {} }
+local curRound
 
 local T = {}            -- timeouts, filled in skynet.start
 
@@ -33,6 +38,9 @@ end
 local function broadcast(msg)
   for _, p in ipairs(players) do
     push(p, msg)
+  end
+  for _, w in pairs(watchers) do
+    push(w, msg)
   end
 end
 
@@ -76,10 +84,11 @@ local function scores()
   return out
 end
 
+-- Table snapshot; seat = nil for a spectator view (no hand, you = -1).
 local function snapshot(seat)
   return {
     push = "snapshot",
-    you = seat - 1,
+    you = seat and seat - 1 or -1,
     started = started,
     mode = mode,
     code = code,
@@ -94,7 +103,7 @@ local function snapshot(seat)
     trickNo = st and st.trickNo,
     trick = st and trickWire(),
     seats = seatInfos(),
-    hand = (st and started) and handStrings(seat) or nil,
+    hand = (st and started and seat) and handStrings(seat) or nil,
     deadline = st and math.max(0, deadline - skynet.now()) or nil,
     config = cfg,
   }
@@ -135,18 +144,50 @@ local function startRound(prevScores)
     scores = prevScores,
     config = cfg,
   }
+  -- Record the full deal for the replay.
+  local allHands, stockStrings = {}, {}
+  for i = 1, size do allHands[i] = handStrings(i) end
+  for _, c in ipairs(st.stock) do
+    stockStrings[#stockStrings + 1] = engine.cardString(c)
+  end
+  curRound = {
+    dealer = dealerSeat - 1,
+    trump = engine.cardString(st.trumpCard),
+    hands = allHands,
+    stock = stockStrings,
+    scores = scores(),
+    actions = {},
+  }
+  record.rounds[#record.rounds + 1] = curRound
+
   for i, p in ipairs(players) do
     push(p, {
       push = "round_start",
       round = roundNo,
       dealer = dealerSeat - 1,
-      trump = engine.cardString(st.trumpCard),
+      trump = curRound.trump,
       stock = #st.stock,
-      hand = handStrings(i),
-      scores = scores(),
+      hand = allHands[i],
+      scores = curRound.scores,
+    })
+  end
+  for _, w in pairs(watchers) do
+    push(w, {
+      push = "round_start",
+      round = roundNo,
+      dealer = dealerSeat - 1,
+      trump = curRound.trump,
+      stock = #st.stock,
+      scores = curRound.scores,
     })
   end
   announceTurn()
+end
+
+--- Appends one action to the current round's replay record.
+local function recordAction(seat, cmd, value)
+  curRound.actions[#curRound.actions + 1] =
+    { s = seat - 1, c = cmd, v = value }
 end
 
 local function endRound()
@@ -204,6 +245,22 @@ local function endRound()
     end
     if #humans > 0 then
       skynet.call(".db", "lua", "game_result", mode, humans)
+      -- Persist the replay for the human participants.
+      record.mode = mode
+      record.size = size
+      record.stake = stake
+      record.config = cfg
+      local names = {}
+      local seatUids = {}
+      for i, p in ipairs(players) do
+        names[i] = p.name
+        seatUids[i] = p.uid or 0
+      end
+      record.names = names
+      record.uids = uids
+      record.seat_uids = seatUids
+      record.winners = winners
+      skynet.send(".db", "lua", "save_replay", uids, record)
     end
     skynet.send(".hub", "lua", "room_closed", skynet.self(), uids)
     skynet.timeout(200, function() skynet.exit() end)
@@ -237,6 +294,7 @@ local function doPlay(seat, cardStr)
 
   local ok, err = engine.play(st, seat, cardStr)
   if not ok then return err end
+  recordAction(seat, "p", cardStr)
   broadcast { push = "played", seat = seat - 1, card = cardStr }
   if completing then
     local winner
@@ -258,6 +316,7 @@ local function botAct()
       play = true
       engine.decide(st, seat, true)
     end
+    recordAction(seat, "d", play)
     broadcast { push = "decided", seat = seat - 1, play = play }
     postAction()
   elseif st.phase == "exchanging" then
@@ -266,6 +325,7 @@ local function botAct()
       cards = {}
       engine.exchange(st, seat, cards)
     end
+    recordAction(seat, "e", cards)
     broadcast { push = "exchanged", seat = seat - 1, count = #cards }
     postAction()
   elseif st.phase == "playing" then
@@ -326,6 +386,18 @@ end
 
 function CMD.info()
   return { stake = stake, started = started, code = code }
+end
+
+--- Adds a spectator; they get every broadcast but never any hand.
+function CMD.watch(p)
+  watchers[p.uid] = { uid = p.uid, agent = p.agent, fd = p.fd }
+  push(watchers[p.uid], snapshot(nil))
+  return true
+end
+
+function CMD.unwatch(uid)
+  watchers[uid] = nil
+  return true
 end
 
 function CMD.init(opts)
@@ -419,6 +491,7 @@ function CMD.action(uid, msg)
     local ok, e = engine.decide(st, seat, msg.play and true or false)
     err = not ok and e or nil
     if not err then
+      recordAction(seat, "d", msg.play and true or false)
       broadcast { push = "decided", seat = seat - 1, play = msg.play and true or false }
       postAction()
     end
@@ -427,6 +500,7 @@ function CMD.action(uid, msg)
     local ok, e = engine.exchange(st, seat, cards)
     err = not ok and e or nil
     if not err then
+      recordAction(seat, "e", cards)
       broadcast { push = "exchanged", seat = seat - 1, count = #cards }
       push(p, { push = "exchange_result", hand = handStrings(seat) })
       postAction()
