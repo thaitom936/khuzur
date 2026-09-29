@@ -107,10 +107,23 @@ function M.newRound(args)
       state.phase = "exchanging"
       -- turn is already the seat left of the dealer.
     else
-      M.startPlaying(state)
+      M.enterNavshOrPlay(state)
     end
   end
   return state
+end
+
+--- Second exchange round, "navsh" (навш): once everyone has exchanged
+--- with the stock, the dealer may trade one hand card for the face-up
+--- trump. Skipped when the dealer passed or the rule is off.
+function M.enterNavshOrPlay(state)
+  if state.config.dealerTakesTrump
+      and state.players[state.dealer].decision == "play" then
+    state.phase = "navsh"
+    state.turn = state.dealer
+  else
+    M.startPlaying(state)
+  end
 end
 
 function M.startPlaying(state)
@@ -224,16 +237,12 @@ function M.decide(state, seat, play)
   return true
 end
 
---- Dealer privilege (庄可以换翻的主牌): on the dealer's exchange turn,
---- trade any one hand card for the face-up trump card. The trump SUIT
---- stays what was flipped at the deal. Once per round, before the
---- dealer's stock exchange.
+--- Navsh phase: the dealer trades any one hand card for the face-up
+--- trump card. The trump SUIT stays what was flipped at the deal.
+--- Play begins right after.
 function M.takeTrump(state, seat, cardStr)
-  local ok, err = checkTurn(state, "exchanging", seat)
+  local ok, err = checkTurn(state, "navsh", seat)
   if not ok then return nil, err end
-  if not state.config.dealerTakesTrump then return nil, "not_allowed" end
-  if seat ~= state.dealer then return nil, "not_dealer" end
-  if state.trumpTaken then return nil, "already_taken" end
   local card = M.parseCard(cardStr)
   local p = state.players[seat]
   for i, c in ipairs(p.hand) do
@@ -241,10 +250,19 @@ function M.takeTrump(state, seat, cardStr)
       p.hand[i] = state.trumpCard
       state.trumpCard = card
       state.trumpTaken = true
+      M.startPlaying(state)
       return true
     end
   end
   return nil, "card_not_in_hand"
+end
+
+--- Navsh phase: the dealer keeps their hand; play begins.
+function M.skipNavsh(state, seat)
+  local ok, err = checkTurn(state, "navsh", seat)
+  if not ok then return nil, err end
+  M.startPlaying(state)
+  return true
 end
 
 --- Phase "exchanging": discard `cards` (list of card strings, may be empty)
@@ -284,7 +302,7 @@ function M.exchange(state, seat, cards)
   if nxt then
     state.turn = nxt
   else
-    M.startPlaying(state)
+    M.enterNavshOrPlay(state)
   end
   return true
 end

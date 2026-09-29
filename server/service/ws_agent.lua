@@ -318,7 +318,7 @@ HANDLERS.invite = authed(function(fd, c, msg)
 end)
 
 local ROOM_CMDS = {
-  decide = true, exchange = true, take_trump = true,
+  decide = true, exchange = true, take_trump = true, skip_navsh = true,
   play_card = true,
   auto = true, chat = true,
 }

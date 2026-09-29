@@ -1,55 +1,288 @@
 {
-  "name": "default rules: deal, decide, dealer takes the face-up trump, exchange, play",
+  "name": "default rules: decide, exchange, then navsh (dealer takes the face-up trump), play",
   "players": 2,
   "dealer": 0,
   "hands": [
-    ["AC", "KC", "QC", "JC", "TH"],
-    ["9C", "8C", "AD", "7H", "7D"]
+    [
+      "AC",
+      "KC",
+      "QC",
+      "JC",
+      "TH"
+    ],
+    [
+      "9C",
+      "8C",
+      "AD",
+      "7H",
+      "7D"
+    ]
   ],
   "trump": "KH",
   "stock": [],
   "steps": [
-    {"expect": {"phase": "deciding", "turn": 1}},
-    {"take": {"seat": 0, "card": "TH"}, "error": "wrong_phase"},
-    {"decide": {"seat": 1, "play": true}},
-    {"decide": {"seat": 0, "play": true}},
-    {"expect": {"phase": "exchanging", "turn": 1, "trump": "KH"}},
-
-    {"take": {"seat": 1, "card": "9C"}, "error": "not_dealer"},
-    {"exchange": {"seat": 1, "cards": []}},
-    {"expect": {"turn": 0}},
-    {"take": {"seat": 0, "card": "AD"}, "error": "card_not_in_hand"},
-    {"take": {"seat": 0, "card": "TH"}},
-    {"expect": {"trump": "TH", "hand": {"seat": 0, "cards": ["AC", "KC", "QC", "JC", "KH"]}}},
-    {"take": {"seat": 0, "card": "JC"}, "error": "already_taken"},
-    {"exchange": {"seat": 0, "cards": []}},
-    {"expect": {"phase": "playing", "turn": 1, "trickNo": 1}},
-
-    {"play": {"seat": 1, "card": "9C"}},
-    {"legal": {"seat": 0, "cards": ["JC", "QC", "KC", "AC"]}},
-    {"play": {"seat": 0, "card": "JC"}},
-    {"expect": {"turn": 0, "trickNo": 2, "tricks": [1, 0]}},
-
-    {"play": {"seat": 0, "card": "AC"}},
-    {"legal": {"seat": 1, "cards": ["8C"]}},
-    {"play": {"seat": 1, "card": "8C"}},
-    {"expect": {"turn": 0, "tricks": [2, 0]}},
-
-    {"play": {"seat": 0, "card": "KC"}},
-    {"legal": {"seat": 1, "cards": ["7H"]}},
-    {"play": {"seat": 1, "card": "7D"}, "error": "illegal_card"},
-    {"play": {"seat": 1, "card": "7H"}},
-    {"expect": {"turn": 1, "trickNo": 4, "tricks": [2, 1]}},
-
-    {"play": {"seat": 1, "card": "AD"}},
-    {"legal": {"seat": 0, "cards": ["KH"]}},
-    {"play": {"seat": 0, "card": "KH"}},
-    {"expect": {"turn": 0, "trickNo": 5, "tricks": [3, 1]}},
-
-    {"play": {"seat": 0, "card": "QC"}},
-    {"legal": {"seat": 1, "cards": ["7D"]}},
-    {"play": {"seat": 1, "card": "7D"}},
-
-    {"expect": {"phase": "round_end", "tricks": [4, 1], "scores": [11, 14]}}
+    {
+      "expect": {
+        "phase": "deciding",
+        "turn": 1
+      }
+    },
+    {
+      "take": {
+        "seat": 0,
+        "card": "TH"
+      },
+      "error": "wrong_phase"
+    },
+    {
+      "decide": {
+        "seat": 1,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "expect": {
+        "phase": "exchanging",
+        "turn": 1,
+        "trump": "KH"
+      }
+    },
+    {
+      "take": {
+        "seat": 1,
+        "card": "9C"
+      },
+      "error": "wrong_phase"
+    },
+    {
+      "exchange": {
+        "seat": 1,
+        "cards": []
+      }
+    },
+    {
+      "exchange": {
+        "seat": 0,
+        "cards": []
+      }
+    },
+    {
+      "expect": {
+        "phase": "navsh",
+        "turn": 0
+      }
+    },
+    {
+      "take": {
+        "seat": 1,
+        "card": "9C"
+      },
+      "error": "not_your_turn"
+    },
+    {
+      "skip": {
+        "seat": 1
+      },
+      "error": "not_your_turn"
+    },
+    {
+      "take": {
+        "seat": 0,
+        "card": "AD"
+      },
+      "error": "card_not_in_hand"
+    },
+    {
+      "take": {
+        "seat": 0,
+        "card": "TH"
+      }
+    },
+    {
+      "expect": {
+        "phase": "playing",
+        "turn": 1,
+        "trickNo": 1,
+        "trump": "TH",
+        "hand": {
+          "seat": 0,
+          "cards": [
+            "AC",
+            "KC",
+            "QC",
+            "JC",
+            "KH"
+          ]
+        }
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "9C"
+      }
+    },
+    {
+      "legal": {
+        "seat": 0,
+        "cards": [
+          "JC",
+          "QC",
+          "KC",
+          "AC"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "JC"
+      }
+    },
+    {
+      "expect": {
+        "turn": 0,
+        "trickNo": 2,
+        "tricks": [
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "AC"
+      }
+    },
+    {
+      "legal": {
+        "seat": 1,
+        "cards": [
+          "8C"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "8C"
+      }
+    },
+    {
+      "expect": {
+        "turn": 0,
+        "tricks": [
+          2,
+          0
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "KC"
+      }
+    },
+    {
+      "legal": {
+        "seat": 1,
+        "cards": [
+          "7H"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "7D"
+      },
+      "error": "illegal_card"
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "7H"
+      }
+    },
+    {
+      "expect": {
+        "turn": 1,
+        "trickNo": 4,
+        "tricks": [
+          2,
+          1
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "AD"
+      }
+    },
+    {
+      "legal": {
+        "seat": 0,
+        "cards": [
+          "KH"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "KH"
+      }
+    },
+    {
+      "expect": {
+        "turn": 0,
+        "trickNo": 5,
+        "tricks": [
+          3,
+          1
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "QC"
+      }
+    },
+    {
+      "legal": {
+        "seat": 1,
+        "cards": [
+          "7D"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "7D"
+      }
+    },
+    {
+      "expect": {
+        "phase": "round_end",
+        "tricks": [
+          4,
+          1
+        ],
+        "scores": [
+          11,
+          14
+        ]
+      }
+    }
   ]
 }

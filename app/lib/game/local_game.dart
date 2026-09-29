@@ -112,6 +112,7 @@ class LocalGameController extends GameController {
   bool get _phaseActive =>
       state.phase == Phase.deciding ||
       state.phase == Phase.exchanging ||
+      state.phase == Phase.navsh ||
       state.phase == Phase.playing;
 
   /// Whether the human may pass right now (mirrors the engine's checks so
@@ -149,18 +150,23 @@ class LocalGameController extends GameController {
   }
 
   @override
-  bool get canTakeTrump =>
-      humanTurn &&
-      state.phase == Phase.exchanging &&
-      humanSeat == state.dealer &&
-      !state.trumpTaken &&
-      config.dealerTakesTrump;
+  bool get canTakeTrump => humanTurn && state.phase == Phase.navsh;
 
   @override
   void takeTrump(String card) {
     if (!humanTurn) return;
     if (state.takeTrump(humanSeat, card) == null) {
-      notifyListeners(); // the turn continues: the dealer still exchanges
+      notifyListeners();
+      _runBots();
+    }
+  }
+
+  @override
+  void skipNavsh() {
+    if (!humanTurn) return;
+    if (state.skipNavsh(humanSeat) == null) {
+      notifyListeners();
+      _runBots();
     }
   }
 
@@ -258,12 +264,13 @@ class LocalGameController extends GameController {
         } else if (state.decide(seat, false) != null) {
           state.decide(seat, true); // passing was illegal, forced to play
         }
-      case Phase.exchanging:
-        // The dealer bot may first trade a weak card for the face-up trump.
-        if (seat == state.dealer && !state.trumpTaken) {
-          final give = _bot.chooseTrumpTake(state, seat);
-          if (give != null) state.takeTrump(seat, give);
+      case Phase.navsh:
+        // Trading a weak card for the face-up trump is usually worth it.
+        final give = _bot.chooseTrumpTake(state, seat);
+        if (give == null || state.takeTrump(seat, give) != null) {
+          state.skipNavsh(seat);
         }
+      case Phase.exchanging:
         final cards = _bot.chooseExchange(state, seat);
         if (state.exchange(seat, cards) != null) {
           state.exchange(seat, const []);

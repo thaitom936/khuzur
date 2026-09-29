@@ -127,8 +127,9 @@ const _table = <String, Map<String, String>>{
   'playBtn': {'en': 'Play', 'mn': 'Тоглоно', 'zh': '打'},
   'passBtn': {'en': 'Pass', 'mn': 'Өнжинө', 'zh': '弃'},
   'keepAll': {'en': 'Keep all', 'mn': 'Солихгүй', 'zh': '不换牌'},
-  'takeTrumpBtn': {'en': '⇄ take', 'mn': '⇄ авах', 'zh': '换主牌'},
-  'takeHint': {'en': 'Dealer: select one card to trade for the face-up trump', 'mn': 'Хувиарлагч: ил хөзрөөр солих нэг хөзрөө сонго', 'zh': '庄家：选一张牌可换走明牌'},
+  'takeTrumpBtn': {'en': 'Navsh ⇄', 'mn': 'Навш ⇄', 'zh': 'Navsh 换'},
+  'takeHint': {'en': 'Navsh: pick one card to trade for the face-up trump', 'mn': 'Навш: ил хөзрөөр солих нэг хөзрөө сонго', 'zh': 'Navsh：选一张牌换走明牌'},
+  'navshSkip': {'en': 'Keep hand', 'mn': 'Солихгүй', 'zh': '不换'},
   'exchangeN': {'en': 'Exchange', 'mn': 'Солих', 'zh': '换'},
   'decideHint': {
     'en': 'Play this round, or pass?',

@@ -135,6 +135,8 @@ local function runCase(case)
         ok, err = engine.decide(state, step.decide.seat + 1, step.decide.play)
       elseif step.take then
         ok, err = engine.takeTrump(state, step.take.seat + 1, step.take.card)
+      elseif step.skip then
+        ok, err = engine.skipNavsh(state, step.skip.seat + 1)
       elseif step.exchange then
         ok, err = engine.exchange(state, step.exchange.seat + 1, step.exchange.cards)
       elseif step.play then

@@ -80,9 +80,11 @@ abstract class GameController extends ChangeNotifier {
   void exchange(List<String> cards);
   void play(String card);
 
-  /// Dealer privilege: trade [card] for the face-up trump card
-  /// (own exchange turn only).
+  /// Navsh: trade [card] for the face-up trump card (dealer only).
   void takeTrump(String card) {}
+
+  /// Navsh: keep the hand as it is.
+  void skipNavsh() {}
   void nextRound() {}
   void sendChat(int phraseId) {}
   void setAuto(bool on) {}

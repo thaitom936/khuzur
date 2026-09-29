@@ -134,6 +134,9 @@ skynet.start(function()
     elseif msg.push == "turn" and msg.seat == you then
       if msg.phase == "deciding" then
         call(a, { cmd = "decide", play = true })
+      elseif msg.phase == "navsh" then
+        local tr = call(a, { cmd = "take_trump", card = hand[1] })
+        if tr.err then call(a, { cmd = "skip_navsh" }) end
       elseif msg.phase == "exchanging" then
         call(a, { cmd = "exchange", cards = json.empty_array })
       else

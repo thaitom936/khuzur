@@ -71,6 +71,8 @@ void _runCase(Map<String, dynamic> c) {
       } else if (step.containsKey('take')) {
         final a = step['take'] as Map<String, dynamic>;
         err = state.takeTrump(a['seat'] as int, a['card'] as String);
+      } else if (step.containsKey('skip')) {
+        err = state.skipNavsh((step['skip'] as Map)['seat'] as int);
       } else if (step.containsKey('exchange')) {
         final a = step['exchange'] as Map<String, dynamic>;
         err = state.exchange(a['seat'] as int, _strings(a['cards']));

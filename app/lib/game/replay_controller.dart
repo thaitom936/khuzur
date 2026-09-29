@@ -73,6 +73,8 @@ class ReplayController extends GameController {
         err = state.decide(seat, a['v'] == true);
       case 'k':
         err = state.takeTrump(seat, a['v'] as String);
+      case 'n':
+        err = state.skipNavsh(seat);
       case 'e':
         err = state.exchange(seat, (a['v'] as List? ?? []).cast<String>());
       case 'p':

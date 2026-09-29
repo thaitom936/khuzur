@@ -137,6 +137,7 @@ class RemoteGameController extends GameController {
       turn == humanSeat &&
       (phase == Phase.deciding ||
           phase == Phase.exchanging ||
+          phase == Phase.navsh ||
           phase == Phase.playing);
 
   @override
@@ -197,12 +198,10 @@ class RemoteGameController extends GameController {
   void takeTrump(String card) => _send('take_trump', {'card': card});
 
   @override
-  bool get canTakeTrump =>
-      humanTurn &&
-      phase == Phase.exchanging &&
-      humanSeat == dealer &&
-      !trumpTaken &&
-      config.dealerTakesTrump;
+  bool get canTakeTrump => humanTurn && phase == Phase.navsh;
+
+  @override
+  void skipNavsh() => _send('skip_navsh');
 
   @override
   void sendChat(int phraseId) => _send('chat', {'phrase': phraseId});
@@ -242,6 +241,7 @@ class RemoteGameController extends GameController {
   static const _phases = {
     'deciding': Phase.deciding,
     'exchanging': Phase.exchanging,
+    'navsh': Phase.navsh,
     'playing': Phase.playing,
     'round_end': Phase.roundEnd,
     'game_end': Phase.gameEnd,

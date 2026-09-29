@@ -1,10 +1,7 @@
 {
-  "name": "dealerTakesTrump=false: no navsh phase at all",
+  "name": "navsh skipped: dealer keeps the hand; face-up card stays",
   "players": 2,
   "dealer": 0,
-  "config": {
-    "dealerTakesTrump": false
-  },
   "hands": [
     [
       "AC",
@@ -50,16 +47,31 @@
     },
     {
       "expect": {
-        "phase": "playing",
-        "trump": "KH"
+        "phase": "navsh",
+        "turn": 0
       }
     },
     {
-      "take": {
-        "seat": 0,
-        "card": "TH"
-      },
-      "error": "wrong_phase"
+      "skip": {
+        "seat": 0
+      }
+    },
+    {
+      "expect": {
+        "phase": "playing",
+        "turn": 1,
+        "trump": "KH",
+        "hand": {
+          "seat": 0,
+          "cards": [
+            "AC",
+            "KC",
+            "QC",
+            "JC",
+            "TH"
+          ]
+        }
+      }
     }
   ]
 }

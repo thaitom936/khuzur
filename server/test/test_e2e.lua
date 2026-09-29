@@ -93,6 +93,12 @@ function Client:act(phase)
   if phase == "deciding" then
     local r = self:call { cmd = "decide", play = true }
     check(not r.err, self.name .. " decide: " .. tostring(r.err))
+  elseif phase == "navsh" then
+    local r = self:call { cmd = "take_trump", card = self.hand[1] }
+    if r.err then
+      r = self:call { cmd = "skip_navsh" }
+      check(not r.err, self.name .. " skip_navsh: " .. tostring(r.err))
+    end
   elseif phase == "exchanging" then
     local r = self:call { cmd = "exchange", cards = json.empty_array }
     check(not r.err, self.name .. " exchange: " .. tostring(r.err))
@@ -389,6 +395,8 @@ local function scenario_spectate_and_replay()
         ok2, aerr = engine.decide(rst, act.s + 1, act.v and true or false)
       elseif act.c == "k" then
         ok2, aerr = engine.takeTrump(rst, act.s + 1, act.v)
+      elseif act.c == "n" then
+        ok2, aerr = engine.skipNavsh(rst, act.s + 1)
       elseif act.c == "e" then
         ok2, aerr = engine.exchange(rst, act.s + 1, act.v or {})
       else

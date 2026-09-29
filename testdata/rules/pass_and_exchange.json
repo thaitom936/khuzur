@@ -196,6 +196,7 @@
     "decidePhase": true,
     "mustBeat": true,
     "mustOvertrump": true,
-    "noTrickPenalty": 5
+    "noTrickPenalty": 5,
+    "dealerTakesTrump": false
   }
 }

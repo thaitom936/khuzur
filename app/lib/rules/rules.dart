@@ -59,7 +59,7 @@ class RuleConfig {
   }
 }
 
-enum Phase { deciding, exchanging, playing, roundEnd, gameEnd }
+enum Phase { deciding, exchanging, navsh, playing, roundEnd, gameEnd }
 
 enum Decision { none, play, pass }
 
@@ -213,10 +213,22 @@ class GameState {
         state.phase = Phase.exchanging;
         // turn is already the seat left of the dealer.
       } else {
-        state._startPlaying();
+        state._enterNavshOrPlay();
       }
     }
     return state;
+  }
+
+  /// Second exchange round, "navsh" (навш): once everyone has exchanged
+  /// with the stock, the dealer may trade one hand card for the face-up
+  /// trump. Skipped when the dealer passed or the rule is off.
+  void _enterNavshOrPlay() {
+    if (config.dealerTakesTrump && players[dealer].decision == Decision.play) {
+      phase = Phase.navsh;
+      turn = dealer;
+    } else {
+      _startPlaying();
+    }
   }
 
   void _startPlaying() {
@@ -274,15 +286,12 @@ class GameState {
     return null;
   }
 
-  /// Dealer privilege (庄可以换翻的主牌): on the dealer's exchange
-  /// turn, trade any one hand card for the face-up trump card. The trump
-  /// SUIT stays what was flipped at the deal. Once per round.
+  /// Navsh phase: the dealer trades any one hand card for the face-up
+  /// trump card. The trump SUIT stays what was flipped at the deal.
+  /// Play begins right after.
   String? takeTrump(int seat, String cardStr) {
-    final err = _checkTurn(Phase.exchanging, seat);
+    final err = _checkTurn(Phase.navsh, seat);
     if (err != null) return err;
-    if (!config.dealerTakesTrump) return 'not_allowed';
-    if (seat != dealer) return 'not_dealer';
-    if (trumpTaken) return 'already_taken';
     final card = parseCard(cardStr);
     final p = players[seat];
     final i = p.hand.indexOf(card);
@@ -290,6 +299,15 @@ class GameState {
     p.hand[i] = trumpCard;
     trumpCard = card;
     trumpTaken = true;
+    _startPlaying();
+    return null;
+  }
+
+  /// Navsh phase: the dealer keeps their hand; play begins.
+  String? skipNavsh(int seat) {
+    final err = _checkTurn(Phase.navsh, seat);
+    if (err != null) return err;
+    _startPlaying();
     return null;
   }
 
@@ -320,7 +338,7 @@ class GameState {
     if (next != null) {
       turn = next;
     } else {
-      _startPlaying();
+      _enterNavshOrPlay();
     }
     return null;
   }
