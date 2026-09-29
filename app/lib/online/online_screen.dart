@@ -35,6 +35,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
   RemoteGameController? _game;
   StreamSubscription? _pushSub;
   List<Map<String, dynamic>> _rooms = [];
+  int? _queueWaiting;
+  int? _queueNeed;
 
   @override
   void initState() {
@@ -76,8 +78,14 @@ class _OnlineScreenState extends State<OnlineScreen> {
       });
 
   void _onPush(Map<String, dynamic> msg) {
-    if (msg['push'] == 'invite' && mounted) {
+    if (!mounted) return;
+    if (msg['push'] == 'invite') {
       _inviteDialog(msg);
+    } else if (msg['push'] == 'queue_update') {
+      setState(() {
+        _queueWaiting = msg['waiting'] as int?;
+        _queueNeed = msg['need'] as int?;
+      });
     }
   }
 
@@ -340,7 +348,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
         children: [
           const CircularProgressIndicator(),
           const SizedBox(height: 16),
-          Text(l('searching')),
+          Text(l('searching') +
+              (_queueWaiting != null ? ' ($_queueWaiting/$_queueNeed)' : '')),
           const SizedBox(height: 16),
           MyButton(onPressed: _cancelMatch, child: Text(l('cancel'))),
         ],

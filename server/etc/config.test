@@ -32,4 +32,5 @@ timeout_play = 100
 bot_delay = 5
 round_pause = 10
 quick_size = 4
+match_min_humans = 1 -- tests exercise the bot-fill path
 match_fill_after = 20

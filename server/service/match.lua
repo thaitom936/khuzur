@@ -11,6 +11,7 @@ local CMD = {}
 
 local fill_after
 local default_size
+local min_humans -- humans required before a table may start (bots fill the rest)
 
 local function startRoom(size, stake, players)
   for _, p in ipairs(players) do
@@ -27,6 +28,16 @@ local function startRoom(size, stake, players)
       skynet.send(p.agent, "lua", "push", p.fd,
         { push = "match_found", room = skynet.address(room) })
     end
+  end
+end
+
+-- Tells everyone in a queue how many players they are still waiting for.
+local function notifyQueue(q)
+  local need = math.min(q.size, min_humans)
+  if q.stake > 0 and need < 2 then need = 2 end
+  for _, p in ipairs(q) do
+    skynet.send(p.agent, "lua", "push", p.fd,
+      { push = "queue_update", waiting = #q, need = need })
   end
 end
 
@@ -49,6 +60,8 @@ function CMD.enqueue(player, size, stake)
     local players = {}
     for i = 1, size do players[i] = table.remove(q, 1) end
     startRoom(size, stake, players)
+  else
+    notifyQueue(q)
   end
   return true
 end
@@ -65,6 +78,7 @@ function CMD.remove(uid)
       if q.stake > 0 then
         skynet.send(".db", "lua", "coins_add", uid, q.stake)
       end
+      notifyQueue(q)
       break
     end
   end
@@ -75,10 +89,12 @@ local function tick()
   while true do
     skynet.sleep(100)
     for _, q in pairs(queues) do
-      -- Coin tables only start with at least two humans; free tables can
-      -- start solo against bots.
-      if #q > 0 and (q.stake == 0 or #q >= 2)
-          and skynet.now() - q[1].since >= fill_after then
+      -- A table starts once it has enough humans (min_humans, capped by
+      -- the table size); coin tables additionally need two humans so the
+      -- pot means something. Only then are the empty seats given to bots.
+      local need = math.min(q.size, min_humans)
+      if q.stake > 0 and need < 2 then need = 2 end
+      if #q >= need and skynet.now() - q[1].since >= fill_after then
         local players = {}
         while #q > 0 and #players < q.size do
           players[#players + 1] = table.remove(q, 1)
@@ -91,7 +107,8 @@ end
 
 skynet.start(function()
   fill_after = tonumber(skynet.getenv "match_fill_after") or 500
-  default_size = tonumber(skynet.getenv "quick_size") or 4
+  default_size = tonumber(skynet.getenv "quick_size") or 5
+  min_humans = tonumber(skynet.getenv "match_min_humans") or 5
   skynet.fork(tick)
   skynet.dispatch("lua", function(_, _, cmd, ...)
     skynet.retpack(CMD[cmd](...))

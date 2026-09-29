@@ -33,5 +33,9 @@ timeout_exchange = 1500
 timeout_play = 1500
 bot_delay = 80
 round_pause = 500
-quick_size = 4
+quick_size = 5
+-- A quick-match table starts only once this many humans are queued
+-- (capped by table size). With 5/5 bots never fill quick matches;
+-- lower it when the player base is small.
+match_min_humans = 5
 match_fill_after = 500
