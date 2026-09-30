@@ -64,20 +64,18 @@ class RemoteGameController extends GameController {
   Map<int, int> winnings = {};
   int stake = 0;
   bool locked = false;
+  @override
   bool trumpTaken = false;
 
   /// Fixed at the deal; the dealer's trade never changes the trump suit.
+  @override
   int trumpSuit = 2;
 
   /// True when watching someone else's game (snapshot with you = -1).
   bool get spectating => humanSeat < 0;
 
   bool get canTakeSeat =>
-      spectating &&
-      !gameOver &&
-      (started
-          ? stake == 0 && seats.any((seat) => seat.bot)
-          : seats.length < numPlayers);
+      spectating && !gameOver && !started && seats.length < numPlayers;
 
   Future<void> takeSeat() async {
     if (!canTakeSeat || roomCode == null) throw NetException('room_full');
@@ -148,8 +146,7 @@ class RemoteGameController extends GameController {
       stockCount < config.maxExchange ? stockCount : config.maxExchange;
 
   @override
-  List<int> legalCards() =>
-      legalCardsFor(config, trumpSuit, trick, hand);
+  List<int> legalCards() => legalCardsFor(config, trumpSuit, trick, hand);
 
   // ---- actions ----
 
@@ -261,6 +258,11 @@ class RemoteGameController extends GameController {
           name: s['name'] as String? ?? '?',
           score: s['score'] as int? ?? config.startScore,
           tricks: s['tricks'] as int? ?? 0,
+          wonCards: [
+            for (final card
+                in s['won_cards'] is List ? s['won_cards'] as List : const [])
+              parseCard(card as String),
+          ],
           decision: switch (s['decision']) {
             'play' => Decision.play,
             'pass' => Decision.pass,
@@ -277,6 +279,7 @@ class RemoteGameController extends GameController {
     int seat, {
     int? score,
     int? tricks,
+    List<int>? wonCards,
     Decision? decision,
     bool? online,
     bool? auto,
@@ -287,6 +290,7 @@ class RemoteGameController extends GameController {
       name: s.name,
       score: score ?? s.score,
       tricks: tricks ?? s.tricks,
+      wonCards: wonCards ?? s.wonCards,
       decision: decision ?? s.decision,
       online: online ?? s.online,
       auto: auto ?? s.auto,
@@ -361,6 +365,7 @@ class RemoteGameController extends GameController {
             s,
             score: scoreList[s],
             tricks: 0,
+            wonCards: const [],
             decision: Decision.none,
           );
         }
@@ -404,10 +409,22 @@ class RemoteGameController extends GameController {
         if (seat == humanSeat) hand = [...hand]..remove(card);
       case 'trick_end':
         final winner = msg['winner'] as int;
+        final winningCard = msg['winning_card'] is String
+            ? parseCard(msg['winning_card'] as String)
+            : trick.where((t) => t.seat == winner).firstOrNull?.card;
         completedTrick = trick;
         completedTrickWinner = winner;
         trick = [];
-        _updateSeat(winner, tricks: seats[winner].tricks + 1);
+        _updateSeat(
+          winner,
+          tricks: seats[winner].tricks + 1,
+          wonCards: [
+            ...seats[winner].wonCards,
+            if (winningCard != null &&
+                !seats[winner].wonCards.contains(winningCard))
+              winningCard,
+          ],
+        );
         // After a short look at the full trick, the cards fly to the winner.
         Timer(const Duration(milliseconds: 380), () {
           if (_disposed || completedTrickWinner != winner) return;

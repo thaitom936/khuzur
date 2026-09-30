@@ -33,6 +33,8 @@ class LocalGameController extends GameController {
   int roundNo = 1;
   bool _disposed = false;
   bool _botsRunning = false;
+  final Map<int, List<int>> _wonCards = {};
+  DateTime? _botDeadline;
 
   /// The just-completed trick and its winner, kept briefly so the UI can
   /// show it (the engine clears the trick as soon as it completes).
@@ -50,6 +52,10 @@ class LocalGameController extends GameController {
   @override
   int get trumpCard => state.trumpCard;
   @override
+  int get trumpSuit => state.trumpSuit;
+  @override
+  bool get trumpTaken => state.trumpTaken;
+  @override
   int get stockCount => state.stock.length;
   @override
   List<TrickCard> get trick => state.trick;
@@ -60,7 +66,7 @@ class LocalGameController extends GameController {
   @override
   List<int>? get winners => state.winners;
   @override
-  DateTime? get turnDeadline => null;
+  DateTime? get turnDeadline => _botDeadline;
   @override
   bool get isLocal => true;
   @override
@@ -77,6 +83,7 @@ class LocalGameController extends GameController {
         name: s == humanSeat ? 'You' : 'Bot $s',
         score: state.players[s].score,
         tricks: state.players[s].tricks,
+        wonCards: List.unmodifiable(_wonCards[s] ?? const <int>[]),
         decision: state.players[s].decision,
         bot: s != humanSeat,
       ),
@@ -95,6 +102,8 @@ class LocalGameController extends GameController {
   }
 
   void _deal(List<int> scores) {
+    _wonCards.clear();
+    _botDeadline = null;
     state = deal(
       numPlayers: numPlayers,
       dealer: dealer,
@@ -213,6 +222,9 @@ class LocalGameController extends GameController {
       for (var s = 0; s < numPlayers; s++) {
         if (state.players[s].tricks > tricksBefore[s]) {
           completedTrickWinner = s;
+          (_wonCards[s] ??= []).add(
+            completedTrick!.firstWhere((t) => t.seat == s).card,
+          );
         }
       }
       _scheduleCollect(completedTrickWinner!);
@@ -238,14 +250,12 @@ class LocalGameController extends GameController {
   /// Humanlike thinking time: forced moves come fast, open choices take
   /// longer, and sometimes a bot just thinks.
   Duration _botThink() {
-    const lo = 600, hi = 2600;
+    const lo = 3000, hi = 6000;
     if (state.phase == Phase.playing &&
         state.legalCards(state.turn).length == 1) {
-      return Duration(milliseconds: lo + _rng.nextInt(400));
+      return Duration(milliseconds: lo + _rng.nextInt(751));
     }
-    var d = lo + _rng.nextInt(hi - lo);
-    if (_rng.nextInt(8) == 0) d += 1000 + _rng.nextInt(1500);
-    return Duration(milliseconds: d);
+    return Duration(milliseconds: lo + _rng.nextInt(hi - lo + 1));
   }
 
   Future<void> _runBots() async {
@@ -256,10 +266,14 @@ class LocalGameController extends GameController {
         if (completedTrick != null) {
           // Let the finished trick stay on screen before the next play.
           await Future<void>.delayed(trickPause);
-        } else {
-          await Future<void>.delayed(_botThink());
         }
         if (_disposed || !_phaseActive || humanTurn) break;
+        final think = _botThink();
+        _botDeadline = DateTime.now().add(think);
+        notifyListeners();
+        await Future<void>.delayed(think);
+        if (_disposed || !_phaseActive || humanTurn) break;
+        _botDeadline = null;
         _applyBotAction(state.turn);
         notifyListeners();
       }

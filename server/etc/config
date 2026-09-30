@@ -31,16 +31,19 @@ redis_db = 1
 timeout_decide = 1000
 timeout_exchange = 1500
 timeout_play = 1500
-bot_delay = 80
+bot_delay = 300
 -- humanlike bot thinking: random between bot_delay and bot_delay_max (cs)
-bot_delay_max = 350
+bot_delay_max = 600
+-- Leave time for humans, then fill one empty seat every five seconds.
+bot_join_grace = 3000
+bot_join_interval = 500
 round_pause = 500
 quick_size = 5
 -- A quick-match table starts only once this many humans are queued
 -- (capped by table size). With 5/5 bots never fill quick matches;
 -- lower it when the player base is small.
 match_min_humans = 5
-match_fill_after = 500
+match_fill_after = 3000
 -- Coin tables are off for now (free tables only).
 stakes_enabled = "false"
 -- Keep this many all-bot showcase tables running for the lobby.

@@ -18,6 +18,7 @@ local dealerSeat = 1
 local turnId = 0
 local deadline = 0      -- absolute, in centiseconds (skynet.now())
 local totalTricks = {}  -- seat -> tricks across the whole game
+local wonCards = {}     -- seat -> public winning cards in this round
 local watchers = {}     -- uid -> {uid, agent, fd}
 
 -- Full game record for replays: every deal and every action.
@@ -56,6 +57,7 @@ local function seatInfos()
       auto = p.auto or false,
       score = e and e.score,
       tricks = e and e.tricks,
+      won_cards = wonCards[i] or {},
       decision = e and e.decision,
       hand = e and #e.hand,
     }
@@ -142,6 +144,7 @@ end
 
 local function startRound(prevScores)
   roundNo = roundNo + 1
+  wonCards = {}
   st = engine.deal {
     players = size,
     dealer = dealerSeat,
@@ -297,6 +300,10 @@ local function doPlay(seat, cardStr)
   local completing = #st.trick == playCount - 1
   local before = {}
   for i, e in ipairs(st.players) do before[i] = e.tricks end
+  local playedCards = { [seat] = cardStr }
+  for _, t in ipairs(st.trick) do
+    playedCards[t.seat] = engine.cardString(t.card)
+  end
 
   local ok, err = engine.play(st, seat, cardStr)
   if not ok then return err end
@@ -308,7 +315,10 @@ local function doPlay(seat, cardStr)
       if e.tricks > before[i] then winner = i end
     end
     totalTricks[winner] = (totalTricks[winner] or 0) + 1
-    broadcast { push = "trick_end", winner = winner - 1 }
+    wonCards[winner] = wonCards[winner] or {}
+    table.insert(wonCards[winner], playedCards[winner])
+    broadcast { push = "trick_end", winner = winner - 1,
+      winning_card = playedCards[winner] }
   end
   postAction()
   return nil
@@ -367,9 +377,6 @@ local function botThink()
   else
     d = lo + math.random(span // 4, span) -- decisions take a beat longer
   end
-  if math.random(8) == 1 then
-    d = d + math.random(span // 2, span) -- the occasional long think
-  end
   return d
 end
 
@@ -390,6 +397,9 @@ announceTurn = function()
   local timeout = st.phase == "deciding" and T.decide
     or (st.phase == "exchanging" or st.phase == "navsh") and T.exchange
     or T.play
+  local cur = players[st.turn]
+  local automated = cur.bot or cur.auto or cur.online == false
+  if automated then timeout = math.min(timeout, botThink()) end
   deadline = skynet.now() + timeout
   broadcast {
     push = "turn",
@@ -398,9 +408,8 @@ announceTurn = function()
     deadline = timeout,
     can_pass = st.phase == "deciding" and canPass() or nil,
   }
-  local cur = players[st.turn]
-  if cur.bot or cur.auto or cur.online == false then
-    skynet.timeout(botThink(), guard(id, botAct))
+  if automated then
+    skynet.timeout(timeout, guard(id, botAct))
   else
     skynet.timeout(timeout, guard(id, onTimeout))
   end
@@ -479,6 +488,22 @@ function CMD.init(opts)
     startGame()
   else
     broadcast { push = "room_update", code = code, size = size, stake = stake, locked = locked, seats = seatInfos() }
+    if mode == "bot" then
+      local nextBot = 0
+      local function fillNext()
+        if started or #players >= size then return end
+        nextBot = nextBot + 1
+        players[#players + 1] = {
+          bot = true, online = false, misses = 0,
+          name = opts.bot_names[nextBot] or ("Bot " .. nextBot),
+        }
+        broadcast { push = "room_update", code = code, size = size,
+          stake = stake, locked = locked, seats = seatInfos() }
+        if #players == size then startGame()
+        else skynet.timeout(T.bot_join_interval, fillNext) end
+      end
+      skynet.timeout(T.bot_join_grace, fillNext)
+    end
   end
   return true
 end
@@ -656,8 +681,10 @@ skynet.start(function()
   T.decide = tonumber(skynet.getenv "timeout_decide") or 1000
   T.exchange = tonumber(skynet.getenv "timeout_exchange") or 1500
   T.play = tonumber(skynet.getenv "timeout_play") or 1500
-  T.bot_delay = tonumber(skynet.getenv "bot_delay") or 80
-  T.bot_delay_max = tonumber(skynet.getenv "bot_delay_max") or T.bot_delay * 4
+  T.bot_delay = tonumber(skynet.getenv "bot_delay") or 300
+  T.bot_delay_max = tonumber(skynet.getenv "bot_delay_max") or 600
+  T.bot_join_grace = tonumber(skynet.getenv "bot_join_grace") or 3000
+  T.bot_join_interval = tonumber(skynet.getenv "bot_join_interval") or 500
   T.round_pause = tonumber(skynet.getenv "round_pause") or 500
   skynet.dispatch("lua", function(_, _, cmd, ...)
     skynet.retpack(CMD[cmd](...))

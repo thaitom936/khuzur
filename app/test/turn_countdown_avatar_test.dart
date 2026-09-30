@@ -67,7 +67,7 @@ void main() {
       find.byKey(const ValueKey('own-turn-progress')),
     );
     expect(ring.value, closeTo(1, .02));
-    expect(ring.color, const Color(0xffffd166));
+    expect(ring.color, const Color(0xffd5fff6));
     await show(
       tester,
       deadline: DateTime.now().subtract(const Duration(seconds: 1)),
@@ -75,7 +75,7 @@ void main() {
     expect(find.text('0s'), findsOneWidget);
   });
 
-  testWidgets('practice pulses finish without inventing a timer', (
+  testWidgets('practice entry rotation finishes without inventing a timer', (
     tester,
   ) async {
     await show(tester, deadline: null);

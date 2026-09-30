@@ -1,5 +1,5 @@
 --- Verifies the showcase bot rooms: always present in the lobby list,
---- watchable, sittable mid-game, and respawned after a game ends.
+--- watchable, open to humans before staged bot seating, and respawned.
 -- Run from server/: ./skynet/skynet etc/config.botrooms
 local skynet = require "skynet"
 local websocket = require "http.websocket"
@@ -86,8 +86,8 @@ skynet.start(function()
     skynet.sleep(50)
   end
   check(#rooms == 2, "expected 2 bot rooms, got " .. #rooms)
-  check(rooms[1].started and rooms[1].bots == 5 and rooms[1].size == 5,
-    "bot room not running with 5 bots")
+  check(not rooms[1].started and rooms[1].bots == 0 and rooms[1].size == 5,
+    "bot room should reserve its initial seats for humans")
 
   -- Coin tables are rejected while stakes are disabled.
   r = call(a, { cmd = "create_room", size = 2, stake = 100 })
@@ -98,6 +98,22 @@ skynet.start(function()
   check(not r.err, "watch: " .. tostring(r.err))
   local snap = waitPush(a, "snapshot")
   check(snap.you == -1, "bad watcher snapshot")
+  r = call(a, { cmd = "join_room", code = rooms[1].code })
+  check(not r.err, "human could not join during grace period")
+  snap = waitPush(a, "snapshot")
+  check(snap.you == 0 and not snap.started, "human was not seated before bots")
+  -- The first bot arrives alone, with another interval before the next.
+  local update
+  repeat update = waitPush(a, "room_update") until #update.seats == 2
+  check(update.seats[2].bot, "first filler should be a bot")
+  local joinedAt = skynet.now()
+  update = waitPush(a, "room_update")
+  check(#update.seats == 3 and skynet.now() - joinedAt >= 30,
+    "bots must join one at a time")
+  waitPush(a, "game_start")
+  r = call(a, { cmd = "leave_room" })
+  check(not r.err, "human could not leave test table")
+  pending = {}
   call(a, { cmd = "unwatch" })
 
   -- Games are closed once started: no sitting down mid-game.
@@ -113,6 +129,17 @@ skynet.start(function()
   r = call(a, { cmd = "watch", code = endCode })
   check(not r.err, "watch: " .. tostring(r.err))
   waitPush(a, "snapshot")
+  local win = waitPush(a, "trick_end")
+  check(type(win.winning_card) == "string", "winning card missing from result")
+  call(a, { cmd = "unwatch" })
+  pending = {}
+  call(a, { cmd = "watch", code = endCode })
+  snap = waitPush(a, "snapshot")
+  local found = false
+  for _, card in ipairs(snap.seats[win.winner + 1].won_cards or {}) do
+    if card == win.winning_card then found = true end
+  end
+  check(found, "winning cards missing after watcher reconnect")
   waitPush(a, "game_end")
   call(a, { cmd = "unwatch" })
 

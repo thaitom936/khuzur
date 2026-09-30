@@ -72,7 +72,15 @@ class FakeSession extends Session {
   @override
   Future<void> ensureOnline() async {
     if (offline) throw NetException('login_failed');
-    user = UserInfo(uid: 1, name: 'Player', games: 0, wins: 0, coins: 1000);
+    user = UserInfo(
+      uid: 1,
+      name: 'Player',
+      games: 0,
+      wins: 0,
+      coins: 1000,
+      rating: 1000,
+      level: 1,
+    );
     client.state.value = ConnState.online;
     notifyListeners();
   }
@@ -174,7 +182,7 @@ void main() {
       await session.ensureOnline();
       final game = RemoteGameController(session)
         ..humanSeat = -1
-        ..started = true
+        ..started = false
         ..numPlayers = 3
         ..roomCode = '123456'
         ..seats = [
@@ -273,13 +281,14 @@ void main() {
     await session.client.events.close();
   });
 
-  test('availability respects full rooms and paid active games', () {
+  test('availability allows seats only before the game starts', () {
     expect(
       LobbyRoom(room('1', started: true, bots: 5, stake: 100)).canSit,
       isFalse,
     );
     expect(LobbyRoom(room('2', seated: 5)).canSit, isFalse);
-    expect(LobbyRoom(room('3', started: true, bots: 5)).canSit, isTrue);
+    expect(LobbyRoom(room('3', started: true, bots: 5)).canSit, isFalse);
+    expect(LobbyRoom(room('4', seated: 2)).canSit, isTrue);
   });
   testWidgets('rooms visible on first screen and filters work', (tester) async {
     await mountLobby(tester, FakeSession());

@@ -19,6 +19,7 @@ class ReplayController extends GameController {
   int actionIdx = 0; // number of actions of this round already applied
   bool autoPlay = false;
   Timer? _timer;
+  final Map<int, List<int>> _wonCards = {};
 
   /// Set when a recorded action is rejected by the Dart engine — that
   /// would mean the two engines disagree and is worth reporting.
@@ -45,6 +46,7 @@ class ReplayController extends GameController {
       roundIdx == _rounds.length - 1 && actionIdx == _actions.length;
 
   void _loadRound(int index, int upTo) {
+    _wonCards.clear();
     roundIdx = index;
     final r = _rounds[index];
     state = GameState.newRound(
@@ -53,7 +55,8 @@ class ReplayController extends GameController {
       stock: (r['stock'] as List? ?? []).cast<String>(),
       dealer: r['dealer'] as int,
       config: RuleConfig.fromJson(
-          (record['config'] as Map?)?.cast<String, dynamic>() ?? const {}),
+        (record['config'] as Map?)?.cast<String, dynamic>() ?? const {},
+      ),
       scores: (r['scores'] as List).cast<int>(),
     );
     actionIdx = 0;
@@ -78,17 +81,25 @@ class ReplayController extends GameController {
       case 'e':
         err = state.exchange(seat, (a['v'] as List? ?? []).cast<String>());
       case 'p':
-        final playCount =
-            state.players.where((p) => p.decision == Decision.play).length;
+        final playCount = state.players
+            .where((p) => p.decision == Decision.play)
+            .length;
         final completing = state.trick.length == playCount - 1;
         final before = [...state.trick];
         final tricksBefore = [for (final p in state.players) p.tricks];
         err = state.play(seat, a['v'] as String);
-        if (err == null && completing && !silent) {
-          completedTrick = [...before, TrickCard(seat, parseCard(a['v'] as String))];
+        if (err == null && completing) {
+          final cards = [
+            ...before,
+            TrickCard(seat, parseCard(a['v'] as String)),
+          ];
+          if (!silent) completedTrick = cards;
           for (var s = 0; s < state.numPlayers; s++) {
             if (state.players[s].tricks > tricksBefore[s]) {
-              completedTrickWinner = s;
+              (_wonCards[s] ??= []).add(
+                cards.firstWhere((c) => c.seat == s).card,
+              );
+              if (!silent) completedTrickWinner = s;
             }
           }
         } else if (!silent) {
@@ -166,12 +177,17 @@ class ReplayController extends GameController {
   @override
   int get trumpCard => state.trumpCard;
   @override
+  int get trumpSuit => state.trumpSuit;
+  @override
+  bool get trumpTaken => state.trumpTaken;
+  @override
   int get stockCount => state.stock.length;
   @override
   List<TrickCard> get trick => state.trick;
   @override
-  List<int> get hand =>
-      mySeat >= 0 && mySeat < state.numPlayers ? state.players[mySeat].hand : const [];
+  List<int> get hand => mySeat >= 0 && mySeat < state.numPlayers
+      ? state.players[mySeat].hand
+      : const [];
   @override
   List<int> legalCards() => const [];
   @override
@@ -206,6 +222,7 @@ class ReplayController extends GameController {
           name: s < names.length ? names[s] : '?',
           score: state.players[s].score,
           tricks: state.players[s].tricks,
+          wonCards: List.unmodifiable(_wonCards[s] ?? const <int>[]),
           decision: state.players[s].decision,
         ),
     ];

@@ -35,9 +35,9 @@ local function spawnBotRoom()
       name = BOT_NAMES[math.random(#BOT_NAMES)]
     until not used[name]
     used[name] = true
-    players[i] = { bot = true, name = name }
+    players[i] = name
   end
-  CMD.create_room("bot", 5, players, 0, false)
+  CMD.create_room("bot", 5, {}, 0, false, players)
 end
 
 local spawning = 0 -- spawns in flight (spawnBotRoom yields internally)
@@ -132,7 +132,7 @@ end
 
 --- Creates a room. players: list of {uid, name, agent, fd} (quick match
 --- passes the full table incl. bots; friend rooms start with the creator).
-function CMD.create_room(mode, size, players, stake, locked)
+function CMD.create_room(mode, size, players, stake, locked, botNames)
   local room = skynet.newservice("room")
   -- Every room gets a code so the lobby list can address it.
   local code = newCode()
@@ -151,6 +151,7 @@ function CMD.create_room(mode, size, players, stake, locked)
     stake = stake or 0,
     locked = locked or false,
     players = players,
+    bot_names = botNames,
   })
   return room, code
 end

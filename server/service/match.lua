@@ -106,7 +106,7 @@ local function tick()
 end
 
 skynet.start(function()
-  fill_after = tonumber(skynet.getenv "match_fill_after") or 500
+  fill_after = tonumber(skynet.getenv "match_fill_after") or 3000
   default_size = tonumber(skynet.getenv "quick_size") or 5
   min_humans = tonumber(skynet.getenv "match_min_humans") or 5
   skynet.fork(tick)

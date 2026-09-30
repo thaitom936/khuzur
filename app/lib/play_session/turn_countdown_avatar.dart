@@ -1,10 +1,8 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../style/player_avatar.dart';
 
-/// The local player's turn cue. Timing follows the server deadline; this widget
+/// The active player's turn cue. Timing follows the server deadline; this widget
 /// never submits an action or creates a timeout for untimed practice games.
 class TurnCountdownAvatar extends StatefulWidget {
   final String name;
@@ -74,7 +72,7 @@ class _TurnCountdownAvatarState extends State<TurnCountdownAvatar>
         from: (remaining.inMicroseconds / _window.inMicroseconds).clamp(0, 1),
       );
     } else if (!_reduced) {
-      // Two soft entry pulses, then a steady ring. No fictitious countdown.
+      // Rotate on entry for untimed practice without inventing a deadline.
       _clock.duration = const Duration(milliseconds: 1800);
       _clock.forward(from: 0);
     } else {
@@ -91,11 +89,8 @@ class _TurnCountdownAvatarState extends State<TurnCountdownAvatar>
       final seconds = (_window.inMilliseconds * _clock.value / 1000)
           .ceil()
           .clamp(0, 999);
-      final urgent = timed && seconds <= 5;
-      final color = urgent ? const Color(0xffff665d) : const Color(0xffffd166);
-      final pulse = !timed && !_reduced
-          ? math.sin(_clock.value * math.pi * 2).abs()
-          : 0.0;
+      final urgent = timed && seconds <= (_window.inSeconds >= 8 ? 5 : 1);
+      final color = urgent ? const Color(0xffff665d) : const Color(0xffd5fff6);
       return Semantics(
         label: widget.active ? widget.turnLabel : null,
         value: widget.active && timed ? '${seconds}s' : null,
@@ -108,26 +103,19 @@ class _TurnCountdownAvatarState extends State<TurnCountdownAvatar>
               if (widget.active)
                 Positioned(
                   top: 0,
-                  child: Container(
+                  child: SizedBox(
                     width: 58,
                     height: 58,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: color.withValues(alpha: .2 + pulse * .2),
-                          blurRadius: 8 + pulse * 6,
-                          spreadRadius: pulse * 2,
-                        ),
-                      ],
-                    ),
-                    child: CircularProgressIndicator(
-                      key: const ValueKey('own-turn-progress'),
-                      value: timed ? _clock.value : 1,
-                      strokeWidth: 3,
-                      strokeCap: StrokeCap.round,
-                      backgroundColor: Colors.white24,
-                      color: color,
+                    child: Transform.rotate(
+                      angle: !timed && !_reduced ? _clock.value * 12.566 : 0,
+                      child: CircularProgressIndicator(
+                        key: const ValueKey('own-turn-progress'),
+                        value: timed ? _clock.value : .75,
+                        strokeWidth: 3,
+                        strokeCap: StrokeCap.round,
+                        backgroundColor: Colors.white24,
+                        color: color,
+                      ),
                     ),
                   ),
                 ),

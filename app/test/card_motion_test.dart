@@ -9,6 +9,7 @@ import 'package:card/net/session.dart';
 import 'package:card/play_session/card_widget.dart';
 import 'package:card/play_session/play_session_screen.dart';
 import 'package:card/play_session/table_motion.dart';
+import 'package:card/play_session/turn_countdown_avatar.dart';
 import 'package:card/rules/rules.dart';
 import 'package:card/settings/persistence/memory_settings_persistence.dart';
 import 'package:card/settings/settings.dart';
@@ -124,6 +125,77 @@ void main() {
     await session.client.events.close();
   });
 
+  test(
+    'dealer trade keeps original trump through pushes and reconnect',
+    () async {
+      await _push(session, {
+        'push': 'round_start',
+        'round': 11,
+        'dealer': 1,
+        'trump': '8D',
+        'trump_suit': 1,
+        'stock': 0,
+        'scores': [15, 15],
+      });
+      await _push(session, {'push': 'trump_taken', 'seat': 1, 'trump': '8C'});
+      expect(game.trumpCard, 8);
+      expect(game.trumpSuit, 1);
+      expect(game.trumpTaken, isTrue);
+      await _push(session, {
+        'push': 'snapshot',
+        'trump': '8C',
+        'trump_suit': 1,
+        'trump_taken': true,
+        'phase': 'playing',
+        'turn': 0,
+        'hand': ['AC', '7D'],
+        'trick': [
+          {'seat': 1, 'card': '7H'},
+        ],
+      });
+      expect(game.trumpSuit, 1);
+      expect(game.trumpTaken, isTrue);
+      expect(game.legalCards(), [
+        23,
+      ]); // Must trump hearts with diamonds, not clubs.
+      await _push(session, {
+        'push': 'round_start',
+        'round': 12,
+        'dealer': 0,
+        'trump': 'KC',
+        'stock': 0,
+        'scores': <int>[],
+      });
+      expect(game.trumpSuit, 0);
+      expect(game.trumpTaken, isFalse);
+    },
+  );
+
+  testWidgets(
+    'traded-away indicator shows fixed trump suit instead of discard',
+    (tester) async {
+      game.trumpCard = 8;
+      game.trumpSuit = 1;
+      game.trumpTaken = true;
+      await _mount(tester, session, game);
+      final stock = find.byKey(const ValueKey('table-stock'));
+      final marker = find.byKey(const ValueKey('fixed-trump-suit'));
+      expect(
+        find.descendant(of: stock, matching: find.byType(CardView)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: marker, matching: find.text('♦')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: marker, matching: find.text('Trump')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final (size, scale) in [
     (const Size(390, 844), 1.0),
     (const Size(355, 486), 1.0),
@@ -218,6 +290,7 @@ void main() {
       expect(game.displayHand, isNot(contains(7)));
       expect(game.displayTrick.single.card, 7);
       expect(game.playError, isNull);
+      expect(game.seats[0].wonCards, [7]);
     },
   );
 
@@ -240,6 +313,79 @@ void main() {
     expect(game.displayTrick, hasLength(1));
     expect(game.playError, isNull);
     expect(game.tableMotion!.kind, TableMotionKind.reset);
+  });
+
+  test(
+    'winning card list restores on reconnect and clears for a new round',
+    () async {
+      await _push(session, {
+        'push': 'trick_end',
+        'winner': 1,
+        'winning_card': 'AC',
+      });
+      expect(game.seats[1].wonCards, [14]);
+      await _push(session, {
+        'push': 'snapshot',
+        'you': 0,
+        'size': 2,
+        'started': true,
+        'seats': [
+          {'name': 'Me', 'won_cards': []},
+          {
+            'name': 'Bot',
+            'tricks': 2,
+            'won_cards': ['AC', 'KC'],
+          },
+        ],
+      });
+      expect(game.seats[1].wonCards, [14, 13]);
+      await _push(session, {
+        'push': 'round_start',
+        'round': 2,
+        'dealer': 0,
+        'trump': '7C',
+        'stock': 20,
+        'scores': [20, 18],
+      });
+      expect(game.seats.every((s) => s.wonCards.isEmpty), isTrue);
+    },
+  );
+
+  testWidgets('winning cards sit above the avatar and bot countdown drains', (
+    tester,
+  ) async {
+    game.turn = 1;
+    game.turnDeadline = DateTime.now().add(const Duration(seconds: 6));
+    game.seats[1] = const SeatView(
+      name: 'Bot',
+      score: 18,
+      tricks: 2,
+      decision: Decision.play,
+      bot: true,
+      wonCards: [14, 13],
+    );
+    await _mount(tester, session, game);
+    final wins = find.byKey(const ValueKey('won-cards-1'));
+    expect(
+      find.descendant(of: wins, matching: find.byType(CardView)),
+      findsNWidgets(2),
+    );
+    expect(
+      tester.getRect(wins).bottom,
+      lessThan(tester.getRect(find.byKey(const ValueKey('table-seat-1'))).top),
+    );
+    final avatar = find.descendant(
+      of: find.byKey(const ValueKey('table-seat-1')),
+      matching: find.byType(TurnCountdownAvatar),
+    );
+    expect(tester.getCenter(wins).dx, closeTo(tester.getCenter(avatar).dx, .1));
+    await tester.pump(const Duration(seconds: 2));
+    final ring = tester.widget<CircularProgressIndicator>(
+      find.byKey(const ValueKey('own-turn-progress')),
+    );
+    expect(ring.value, closeTo(2 / 3, .03));
+    expect(ring.color, const Color(0xffd5fff6));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

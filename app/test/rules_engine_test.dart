@@ -90,6 +90,7 @@ void _runCase(Map<String, dynamic> c) {
 const _phaseNames = {
   Phase.deciding: 'deciding',
   Phase.exchanging: 'exchanging',
+  Phase.navsh: 'navsh',
   Phase.playing: 'playing',
   Phase.roundEnd: 'round_end',
   Phase.gameEnd: 'game_end',

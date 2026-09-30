@@ -11,6 +11,7 @@ class SeatView {
   final String name;
   final int score;
   final int tricks;
+  final List<int> wonCards;
   final Decision decision;
   final bool online;
   final bool auto;
@@ -20,6 +21,7 @@ class SeatView {
     required this.name,
     required this.score,
     required this.tricks,
+    this.wonCards = const [],
     required this.decision,
     this.online = true,
     this.auto = false,
@@ -42,6 +44,10 @@ abstract class GameController extends ChangeNotifier {
   Phase get phase;
   int get turn;
   int get trumpCard;
+
+  /// Trump suit is fixed at the deal, even when the face-up card is traded.
+  int get trumpSuit => suitOf(trumpCard);
+  bool get trumpTaken => false;
   int get stockCount;
   List<TrickCard> get trick;
   List<SeatView> get seats;

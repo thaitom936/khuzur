@@ -33,6 +33,7 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/images/cards6_pkw.png
     - assets/music/
     - assets/sfx/
 

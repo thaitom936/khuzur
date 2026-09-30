@@ -168,7 +168,7 @@ class _TableViewState extends State<TableView> {
         // Keep cards and actions readable in short windows instead of letting
         // the centre overflow into the player's hand when they sit down.
         final minimumHeight =
-            (replay ? 920.0 : 820.0) *
+            (replay ? 1020.0 : 920.0) *
             MediaQuery.textScalerOf(context).scale(1).clamp(1, 2);
         final table = Center(
           child: ConstrainedBox(
@@ -291,7 +291,7 @@ class _TableViewState extends State<TableView> {
           builder: (context, constraints) {
             final seatWidth = (constraints.maxWidth * .26).clamp(80.0, 124.0);
             final handBottom = spectating || replay ? 74.0 * scale : 18.0;
-            final ownBottom = (spectating ? 18.0 : handBottom) + 108.0 * scale;
+            final ownBottom = (spectating ? 18.0 : handBottom) + 144.0 * scale;
             return Stack(
               fit: StackFit.expand,
               children: [
@@ -301,7 +301,7 @@ class _TableViewState extends State<TableView> {
                     key: ValueKey('table-seat-${others[i]}'),
                     left:
                         constraints.maxWidth * positions[i].dx - seatWidth / 2,
-                    top: positions[i].dy == 0 ? 76 * scale : null,
+                    top: positions[i].dy == 0 ? 114 * scale : null,
                     bottom: positions[i].dy == 1
                         ? ownBottom + 122 * scale
                         : null,
@@ -312,7 +312,7 @@ class _TableViewState extends State<TableView> {
                     ),
                   ),
                 Positioned(
-                  top: constraints.maxHeight * .28,
+                  top: constraints.maxHeight * .26,
                   left: 12,
                   right: 12,
                   height: 150 * scale,
@@ -320,16 +320,61 @@ class _TableViewState extends State<TableView> {
                 ),
                 Positioned(
                   key: const ValueKey('table-stock'),
-                  top: constraints.maxHeight * .49,
+                  top: constraints.maxHeight * .45,
                   left: 12,
                   child: Semantics(
-                    label: '${l('trump')}, ${l('stock')}: ${game.stockCount}',
+                    label:
+                        '${l('trump')} ${suitSymbols[game.trumpSuit]}, ${l('stock')}: ${game.stockCount}',
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CardView(game.trumpCard, width: 40),
+                        if (game.trumpTaken)
+                          Tooltip(
+                            message: l('trumpTakenHint'),
+                            child: Container(
+                              key: const ValueKey('fixed-trump-suit'),
+                              width: 48,
+                              height: 72,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(
+                                  color: const Color(0xff244b43),
+                                ),
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      l('trump'),
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: Color(0xff244b43),
+                                      ),
+                                    ),
+                                    Text(
+                                      suitSymbols[game.trumpSuit],
+                                      style: TextStyle(
+                                        fontSize: 30,
+                                        height: 1.1,
+                                        color:
+                                            game.trumpSuit == 1 ||
+                                                game.trumpSuit == 2
+                                            ? const Color(0xffc62828)
+                                            : const Color(0xff244b43),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          CardView(game.trumpCard, width: 48),
                         const SizedBox(width: 8),
-                        motion.deck(width: 40, count: game.stockCount),
+                        motion.deck(width: 48, count: game.stockCount),
                       ],
                     ),
                   ),
@@ -381,7 +426,7 @@ class _TableViewState extends State<TableView> {
                   left: 14,
                   right: 14,
                   bottom: handBottom,
-                  height: 96,
+                  height: 132,
                   child: _hand(game, motion),
                 ),
                 if (spectating)
@@ -466,140 +511,125 @@ class _TableViewState extends State<TableView> {
     // Rule: players who passed sit this round out, dimmed, score unchanged.
     return Opacity(
       opacity: s.decision == Decision.pass ? 0.45 : 1,
-      child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 76,
-          height: 62,
-          child: Stack(
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          if (s.wonCards.isNotEmpty)
+            Positioned(
+              top: -40,
+              left: 0,
+              right: 0,
+              child: FittedBox(
+                key: ValueKey('won-cards-$seat'),
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final card in s.wonCards)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 1),
+                        child: CardView(card, width: 22),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Align(
-                alignment: Alignment.topCenter,
-                child: seat == game.humanSeat && game is! ReplayController
-                    ? TurnCountdownAvatar(
+              SizedBox(
+                width: 76,
+                height: 62,
+                child: Stack(
+                  children: [
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: TurnCountdownAvatar(
                         name: s.name,
-                        active: game.humanTurn,
+                        active:
+                            game is! ReplayController &&
+                            active &&
+                            (seat != game.humanSeat || game.humanTurn),
                         deadline: game.turnDeadline,
                         turnLabel: l('yourTurn'),
-                      )
-                    : AnimatedContainer(
-                        duration: const Duration(milliseconds: 160),
-                        padding: const EdgeInsets.all(3),
+                      ),
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: active
-                                ? const Color(0xffffd166)
-                                : Colors.transparent,
-                            width: 2,
+                          color: Colors.white.withValues(alpha: .9),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          '${s.score}',
+                          style: const TextStyle(
+                            color: Color(0xff244b43),
+                            fontSize: 12,
                           ),
                         ),
-                        child: PlayerAvatar(name: s.name, size: 46),
                       ),
+                    ),
+                    if (seat == game.dealer)
+                      const Positioned(
+                        left: 0,
+                        top: 1,
+                        child: Text(
+                          'D',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
+              const SizedBox(height: 4),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13),
+              ),
+              Text(
+                s.decision == Decision.pass
+                    ? l('passed')
+                    : !s.online && !s.bot
+                    ? l('offline')
+                    : ' ',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 10, color: Colors.white70),
+              ),
+              if (bubble != null)
+                Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 1,
+                    horizontal: 6,
+                    vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: .9),
-                    borderRadius: BorderRadius.circular(3),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '${s.score}',
+                    bubble < l.phrases.length ? l.phrases[bubble] : '…',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
+                      fontSize: 11,
                       color: Color(0xff244b43),
-                      fontSize: 12,
                     ),
                   ),
                 ),
-              ),
-              if (seat == game.dealer)
-                const Positioned(
-                  left: 0,
-                  top: 1,
-                  child: Text(
-                    'D',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              // Won tricks pile up on the avatar (每墩累加显示).
-              if (s.tricks > 0)
-                Positioned(left: 0, bottom: 0, child: _trickPile(s.tricks)),
             ],
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 13),
-        ),
-        Text(
-          s.decision == Decision.pass
-              ? l('passed')
-              : !s.online && !s.bot
-              ? l('offline')
-              : ' ',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 10, color: Colors.white70),
-        ),
-        if (bubble != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              bubble < l.phrases.length ? l.phrases[bubble] : '…',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: Color(0xff244b43)),
-            ),
-          ),
-      ],
-      ),
-    );
-  }
-
-  /// Mini pile of card backs on the avatar showing tricks won so far.
-  Widget _trickPile(int tricks) {
-    final backs = tricks > 4 ? 4 : tricks;
-    return SizedBox(
-      width: 16 + 4.0 * (backs - 1) + 14,
-      height: 24,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          for (var k = 0; k < backs; k++)
-            Positioned(left: k * 4.0, top: 0, child: const CardBack(width: 14)),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xffffd166),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                '$tricks',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xff244b43),
-                ),
-              ),
-            ),
           ),
         ],
       ),
@@ -615,10 +645,12 @@ class _TableViewState extends State<TableView> {
 
   Widget _center(GameController game, L l, CardTableMotionState motion) {
     // Rule: centre cards are shown smallest to largest, without names.
-    final trick = [...game.displayTrick]..sort((a, b) =>
-        rules.rankOf(a.card) != rules.rankOf(b.card)
+    final trick = [...game.displayTrick]
+      ..sort(
+        (a, b) => rules.rankOf(a.card) != rules.rankOf(b.card)
             ? rules.rankOf(a.card) - rules.rankOf(b.card)
-            : a.card - b.card);
+            : a.card - b.card,
+      );
     final String status;
     if (game.completedTrickWinner != null) {
       status = l.fmt(
@@ -649,21 +681,24 @@ class _TableViewState extends State<TableView> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         SizedBox(
-          height: 88,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (final t in trick)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      motion.trickCard(t.card, CardView(t.card, width: 44)),
-                    ],
+          height: 96,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (final t in trick)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        motion.trickCard(t.card, CardView(t.card, width: 58)),
+                      ],
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -698,39 +733,58 @@ class _TableViewState extends State<TableView> {
   Widget _hand(GameController game, CardTableMotionState motion) {
     final hand = [...game.displayHand]..sort();
     final playing = game.phase == Phase.playing && game.humanTurn;
-    final exchanging = (game.phase == Phase.exchanging ||
-            game.phase == Phase.navsh) &&
+    final exchanging =
+        (game.phase == Phase.exchanging || game.phase == Phase.navsh) &&
         game.humanTurn;
     final legal = playing ? game.legalCards() : hand;
 
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          for (final card in hand)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: motion.handCard(
-                card,
-                CardView(
-                  card,
-                  selected: _selected.contains(card),
-                  disabled:
-                      game.playPending || (playing && !legal.contains(card)),
-                  onTap: motion.dealing
-                      ? null
-                      : () => _onCardTap(
-                          game,
-                          card,
-                          playing: playing,
-                          exchanging: exchanging,
-                        ),
-                ),
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (hand.isEmpty) return const SizedBox.shrink();
+        final width = constraints.maxWidth.clamp(0.0, 80.0);
+        final stride = hand.length <= 1
+            ? 0.0
+            : ((constraints.maxWidth - width) / (hand.length - 1)).clamp(
+                0.0,
+                width + 6,
+              );
+        return Center(
+          child: SizedBox(
+            width: width + stride * (hand.length - 1),
+            height: 132,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                for (var i = 0; i < hand.length; i++)
+                  Positioned(
+                    key: ValueKey('hand-card-${hand[i]}'),
+                    left: i * stride,
+                    top: 12,
+                    child: motion.handCard(
+                      hand[i],
+                      CardView(
+                        hand[i],
+                        width: width,
+                        selected: _selected.contains(hand[i]),
+                        disabled:
+                            game.playPending ||
+                            (playing && !legal.contains(hand[i])),
+                        onTap: motion.dealing
+                            ? null
+                            : () => _onCardTap(
+                                game,
+                                hand[i],
+                                playing: playing,
+                                exchanging: exchanging,
+                              ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -818,8 +872,10 @@ class _TableViewState extends State<TableView> {
                       setState(_selected.clear);
                     }
                   : null,
-              child: Text('${l('takeTrumpBtn')} '
-                  '${rankLabel(game.trumpCard)}${suitSymbols[rules.suitOf(game.trumpCard)]}'),
+              child: Text(
+                '${l('takeTrumpBtn')} '
+                '${rankLabel(game.trumpCard)}${suitSymbols[rules.suitOf(game.trumpCard)]}',
+              ),
             ),
             const SizedBox(height: 12),
             _tableButton(

@@ -526,6 +526,14 @@ skynet.start(function()
       if r.err then error(r.err) end
       skynet.error("[db] migrated user.coins")
     end
+    columns = mysql:query("SHOW COLUMNS FROM user_stat LIKE 'rating'")
+    if columns.err then error(columns.err) end
+    if not columns[1] then
+      local r = mysql:query(
+        "ALTER TABLE user_stat ADD COLUMN rating INT NOT NULL DEFAULT 0")
+      if r.err then error(r.err) end
+      skynet.error("[db] migrated user_stat.rating")
+    end
   end)
   if not ok then
     mysql = nil

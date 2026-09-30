@@ -69,19 +69,32 @@ class LobbyRoomCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final name in names)
+                for (var i = 0; i < room.size; i++)
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          PlayerAvatar(name: name, size: 36),
+                          if (i < names.length)
+                            PlayerAvatar(name: names[i], size: 36)
+                          else
+                            const CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Color(0xffedf2ed),
+                              child: Icon(
+                                Icons.person_add_alt,
+                                size: 20,
+                                color: lobbyMuted,
+                              ),
+                            ),
                           const SizedBox(height: 8),
                           Tooltip(
-                            message: name,
+                            message: i < names.length
+                                ? names[i]
+                                : l('openSeat'),
                             child: Text(
-                              name,
+                              i < names.length ? names[i] : l('openSeat'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
