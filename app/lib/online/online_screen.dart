@@ -152,8 +152,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
     if (!mounted) return;
     if ((game.started || game.spectating) &&
         game.roomCode != null &&
-        game.seats.isNotEmpty &&
-        !game.suspended) {
+        game.seats.isNotEmpty) {
       GoRouter.of(context).go('/online/table');
     } else if (game.roomCode != null && !game.started) {
       setState(() => _state = _LobbyState.waitingRoom);
@@ -310,13 +309,12 @@ class _OnlineScreenState extends State<OnlineScreen> {
               onDestinationSelected: _busy
                   ? null
                   : (index) async {
-                      if (index == 3) {
+                      if (index == 2) {
                         _profileSheet(session, l);
                         return;
                       }
                       final path = switch (index) {
-                        1 => '/online/friends',
-                        2 => '/online/replays',
+                        1 => '/online/replays',
                         _ => null,
                       };
                       if (path == null) return;
@@ -328,11 +326,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                   icon: const Icon(Icons.grid_view_rounded),
                   label: l('lobby'),
                 ),
-                NavigationDestination(
-                  enabled: session.loggedIn,
-                  icon: const Icon(Icons.people_outline),
-                  label: l('friends'),
-                ),
+                // Friends is hidden for now (feature parked).
                 NavigationDestination(
                   enabled: session.loggedIn,
                   icon: const Icon(Icons.history),
@@ -437,20 +431,6 @@ class _OnlineScreenState extends State<OnlineScreen> {
                           ],
                         ),
                       ),
-                      if (_game != null && _game!.started && _game!.suspended)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 10),
-                          child: FilledButton.icon(
-                            onPressed: session.loggedIn && !_busy
-                                ? () {
-                                    _game!.suspended = false;
-                                    GoRouter.of(context).go('/online/table');
-                                  }
-                                : null,
-                            icon: const Icon(Icons.play_arrow),
-                            label: Text(l('resumeGame')),
-                          ),
-                        ),
                       const SizedBox(height: 8),
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
@@ -704,6 +684,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                   subtitle: session.user == null
                       ? null
                       : Text(
+                          'Lv${session.user!.level} · ${l('points')}: ${session.user!.rating}\n'
                           '${l('games')}: ${session.user!.games} · ${l('wins')}: ${session.user!.wins}',
                         ),
                   trailing: session.loggedIn

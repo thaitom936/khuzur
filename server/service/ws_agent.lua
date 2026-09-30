@@ -42,6 +42,7 @@ function HANDLERS.login(fd, c, msg)
   local resp = {
     uid = user.uid, name = user.name, lang = user.lang,
     coins = user.coins, games = user.games, wins = user.wins,
+    rating = user.rating, level = user.level,
     token = token, in_room = inRoom,
   }
   if inRoom then
@@ -66,6 +67,7 @@ function HANDLERS.resume(fd, c, msg)
   return {
     uid = user.uid, name = user.name, lang = user.lang,
     coins = user.coins, games = user.games, wins = user.wins,
+    rating = user.rating, level = user.level,
     in_room = inRoom,
   }
 end
@@ -187,7 +189,9 @@ HANDLERS.leave_room = authed(function(fd, c, msg)
   local info = skynet.call(room, "lua", "info")
   local ok, err = skynet.call(room, "lua", "leave", c.uid)
   if not ok then return nil, err end
-  refund(c.uid, info.stake) -- leaving is only possible before the start
+  if not info.started then
+    refund(c.uid, info.stake) -- a mid-game forfeit keeps the stake in the pot
+  end
   return {}
 end)
 

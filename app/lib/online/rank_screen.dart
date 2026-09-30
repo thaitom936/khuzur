@@ -57,7 +57,8 @@ class _RankScreenState extends State<RankScreen> {
             Text(l('leaderboard'),
                 style: Theme.of(context).textTheme.headlineMedium),
             if (_me != null)
-              Text('${l('rank')}: ${_me!['rank']} · ${l('wins')}: ${_me!['wins']}'),
+              Text('${l('rank')}: ${_me!['rank']} · Lv${_me!['level']}'
+                  ' · ${l('points')}: ${_me!['rating']}'),
             const SizedBox(height: 8),
             Expanded(
               child: _error != null
@@ -79,8 +80,8 @@ class _RankScreenState extends State<RankScreen> {
                                         fontWeight: FontWeight.bold)
                                     : null,
                               ),
-                              trailing:
-                                  Text('${row['wins']} ${l('wins')}'),
+                              trailing: Text(
+                                  'Lv${row['level']} · ${row['rating']}'),
                             );
                           },
                         ),

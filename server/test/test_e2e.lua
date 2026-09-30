@@ -415,88 +415,70 @@ local function scenario_spectate_and_replay()
   websocket.close(w.id)
 end
 
-local function scenario_room_list_and_sit()
+local function scenario_room_list_and_forfeit()
   local a = connect("LA")
   local b = connect("LB")
-  local w2 = connect("LW")
+  local c = connect("LC")
   local ra = a:call { cmd = "login", device = "e2e-device-l-aa", name = "La" }
   local rb = b:call { cmd = "login", device = "e2e-device-l-bb", name = "Lb" }
-  local rw = w2:call { cmd = "login", device = "e2e-device-l-ww", name = "Lw" }
-  check(not (ra.err or rb.err or rw.err), "list logins failed")
+  local rc = c:call { cmd = "login", device = "e2e-device-l-cc", name = "Lc" }
+  check(not (ra.err or rb.err or rc.err), "list logins failed")
+  check(ra.rating ~= nil and ra.level == 1, "login lacks rating/level")
 
-  -- A creates a 3-seat free room; it shows up in the list.
+  -- A creates a 3-seat room; it shows in the list; B sits pre-start.
   local cr = a:call { cmd = "create_room", size = 3 }
   check(not cr.err, "create: " .. tostring(cr.err))
   local r = b:call { cmd = "room_list" }
-  check(not r.err, "room_list: " .. tostring(r.err))
   local entry
   for _, room in ipairs(r.rooms) do
     if room.code == cr.code then entry = room end
   end
-  check(entry and entry.seated == 1 and entry.size == 3
-    and entry.started == false, "room missing from list")
+  check(entry and entry.seated == 1 and entry.started == false,
+    "room missing from list")
+  r = b:call { cmd = "join_room", code = cr.code }
+  check(not r.err, "pre-start sit: " .. tostring(r.err))
 
-  -- Entering a waiting room is spectator-only and must not occupy a seat.
-  r = b:call { cmd = "watch", code = cr.code }
-  check(not r.err, "watch waiting room: " .. tostring(r.err))
-  local waiting = b:waitPush("snapshot")
-  check(waiting.you == -1 and waiting.started == false and not waiting.hand,
-    "waiting watcher received player state")
-  r = b:call { cmd = "room_list" }
-  for _, room in ipairs(r.rooms) do
-    if room.code == cr.code then
-      check(room.seated == 1 and room.watchers == 1, "watcher occupied a seat")
-    end
-  end
-
-  -- A starts early: two bot seats. The list now shows a running room.
+  -- A starts early (one bot seat); the game is now closed to newcomers.
   r = a:call { cmd = "start_room" }
   check(not r.err, "start_room: " .. tostring(r.err))
   a:waitPush("game_start")
-  local watching = b:waitPush("snapshot")
-  check(watching.you == -1 and watching.started == true and not watching.hand,
-    "waiting watcher did not transition to the started game")
-  local publicRound = b:waitPush("round_start")
-  check(not publicRound.hand, "private cards leaked to spectator")
-  r = b:call { cmd = "room_list" }
-  local running
-  for _, room in ipairs(r.rooms) do
-    if room.code == cr.code then running = room end
-  end
-  check(running and running.started == true and running.bots == 2,
-    "running room not listed with bots")
+  b:waitPush("game_start")
+  r = c:call { cmd = "join_room", code = cr.code }
+  check(r.err == "already_started", "mid-game sit should be rejected, got "
+    .. tostring(r.err))
 
-  -- B sits down mid-game on a bot seat and gets a proper snapshot.
-  r = b:call { cmd = "join_room", code = cr.code }
-  check(not r.err, "sit: " .. tostring(r.err))
-  local snap = b:waitPush("snapshot")
-  check(snap.you >= 0 and snap.hand and #snap.seats == 3, "bad sit snapshot")
-  r = b:call { cmd = "room_list" }
-  for _, room in ipairs(r.rooms) do
-    if room.code == cr.code then
-      check(room.watchers == 0 and room.bots == 1,
-        "new player retained spectator membership")
-    end
-  end
-  check(b.you >= 0, "spectator snapshot overwrote the seated player")
-
-  -- W watches by room code.
-  r = w2:call { cmd = "watch", code = cr.code }
+  -- Watching a running game is still fine.
+  r = c:call { cmd = "watch", code = cr.code }
   check(not r.err, "watch by code: " .. tostring(r.err))
-  local wsnap = w2:waitPush("snapshot")
+  local wsnap = c:waitPush("snapshot")
   check(wsnap.you == -1, "bad watcher snapshot")
 
-  -- Play it out: both seated humans drive to the end.
-  local done = 0
-  local function drive(cl)
-    skynet.fork(function()
-      cl:playUntilGameEnd()
-      done = done + 1
-    end)
-  end
-  drive(a)
-  drive(b)
-  while done < 2 do skynet.sleep(10) end
+  -- A forfeits mid-game: seat goes to a bot, A is free immediately and
+  -- the loss is on A's record.
+  r = a:call { cmd = "leave_room" }
+  check(not r.err, "forfeit: " .. tostring(r.err))
+  local nr = a:call { cmd = "create_room", size = 2 }
+  check(not nr.err, "post-forfeit create: " .. tostring(nr.err))
+  check(not a:call { cmd = "leave_room" }.err, "leave new room")
+  local da = a:call { cmd = "daily" }
+  check(da.tasks[1].progress == 1, "forfeit loss not recorded")
+
+  -- B plays the game out against the bots and sees the end.
+  local done = false
+  skynet.fork(function()
+    b:playUntilGameEnd()
+    done = true
+  end)
+  while not done do skynet.sleep(10) end
+
+  -- Winner rating moved by the level-1 tier (+20), forfeiter stayed at 0.
+  skynet.sleep(20)
+  local db_ = b:call { cmd = "daily" }
+  check(da.rating == 0, "forfeiter rating should stay 0, got " .. tostring(da.rating))
+  check(db_.rating == 20 or db_.rating == 0,
+    "unexpected winner rating " .. tostring(db_.rating))
+  r = b:call { cmd = "rank" }
+  check(not r.err and #r.top >= 1 and r.top[1].level ~= nil, "rank lacks level")
 
   -- The finished room disappears from the list.
   skynet.sleep(30)
@@ -504,10 +486,10 @@ local function scenario_room_list_and_sit()
   for _, room in ipairs(r.rooms) do
     check(room.code ~= cr.code, "closed room still listed")
   end
-  skynet.error("E2E room_list_and_sit OK")
+  skynet.error("E2E room_list_and_forfeit OK")
   websocket.close(a.id)
   websocket.close(b.id)
-  websocket.close(w2.id)
+  websocket.close(c.id)
 end
 
 local function scenario_locked_room()
@@ -597,7 +579,7 @@ skynet.start(function()
     scenario_friends_and_invite()
     scenario_coins_and_daily()
     scenario_spectate_and_replay()
-    scenario_room_list_and_sit()
+    scenario_room_list_and_forfeit()
     scenario_locked_room()
   end)
   if ok and not failed then

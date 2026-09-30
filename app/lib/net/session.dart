@@ -22,6 +22,8 @@ class UserInfo {
   int games;
   int wins;
   int coins;
+  int rating;
+  int level;
 
   UserInfo({
     required this.uid,
@@ -29,6 +31,8 @@ class UserInfo {
     required this.games,
     required this.wins,
     required this.coins,
+    required this.rating,
+    required this.level,
   });
 }
 
@@ -113,6 +117,8 @@ class Session extends ChangeNotifier {
       games: resp['games'] as int? ?? 0,
       wins: resp['wins'] as int? ?? 0,
       coins: resp['coins'] as int? ?? 0,
+      rating: resp['rating'] as int? ?? 0,
+      level: resp['level'] as int? ?? 1,
     );
     inRoom = resp['in_room'] == true;
     notifyListeners();
@@ -128,6 +134,8 @@ class Session extends ChangeNotifier {
     if (!loggedIn) return;
     try {
       final resp = await client.call('daily');
+      user?.rating = resp['rating'] as int? ?? user!.rating;
+      user?.level = resp['level'] as int? ?? user!.level;
       updateCoins(resp['coins'] as int? ?? user!.coins);
     } on NetException {
       // Balance display refresh only; ignore.

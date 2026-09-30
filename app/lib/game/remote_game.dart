@@ -211,6 +211,13 @@ class RemoteGameController extends GameController {
 
   void leaveRoom() => _send('leave_room');
 
+  /// Mid-game forfeit: the seat goes to a bot, the loss is recorded and
+  /// this player is immediately free to join another game.
+  void abandon() {
+    _send('leave_room');
+    reset();
+  }
+
   /// Clears table state after a finished game, back in the lobby.
   void reset() {
     _resetMotion();

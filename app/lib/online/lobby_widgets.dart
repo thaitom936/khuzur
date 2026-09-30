@@ -21,7 +21,8 @@ class LobbyRoom {
   int get bots => data['bots'] as int? ?? 0;
   int get humans => (seated - bots).clamp(0, size);
   int get stake => data['stake'] as int? ?? 0;
-  bool get canSit => started ? bots > 0 && stake == 0 : seated < size;
+  // One game is one sitting: no joining once play has started.
+  bool get canSit => !started && seated < size;
   bool get practice => data['mode'] == 'bot';
   bool matches(RoomFilter filter) => switch (filter) {
     RoomFilter.all => true,

@@ -100,55 +100,21 @@ skynet.start(function()
   check(snap.you == -1, "bad watcher snapshot")
   call(a, { cmd = "unwatch" })
 
-  -- Sitting down replaces a bot. The room we saw may have finished in
-  -- the meantime, so retry against a fresh list.
-  local endCode
-  for attempt = 1, 5 do
-    local fresh = botRooms(a)
-    check(#fresh > 0, "no bot room to sit in")
-    r = call(a, { cmd = "join_room", code = fresh[1].code })
-    if not r.err then
-      endCode = fresh[1].code
-      break
-    end
-    check(r.err == "room_not_found" and attempt < 5,
-      "sit: " .. tostring(r.err))
-    skynet.sleep(20)
-  end
-  snap = waitPush(a, "snapshot")
-  check(snap.you >= 0 and snap.hand, "bad sit snapshot")
+  -- Games are closed once started: no sitting down mid-game.
+  local fresh = botRooms(a)
+  check(#fresh > 0, "no bot room to test against")
+  r = call(a, { cmd = "join_room", code = fresh[1].code })
+  check(r.err == "already_started", "mid-game sit should be rejected, got "
+    .. tostring(r.err))
 
-  -- Play (drive our seat) until the game ends, then the keeper respawns:
-  -- shortly after there are 2 bot rooms again, and the finished room's
-  -- code is gone.
-  local you = snap.you
-  local hand = snap.hand or {}
-  while true do
-    local msg = nextMsg(a)
-    if msg.push == "round_start" or msg.push == "exchange_result" then
-      hand = msg.hand
-    elseif msg.push == "played" and msg.seat == you then
-      for i, c in ipairs(hand) do
-        if c == msg.card then table.remove(hand, i) break end
-      end
-    elseif msg.push == "turn" and msg.seat == you then
-      if msg.phase == "deciding" then
-        call(a, { cmd = "decide", play = true })
-      elseif msg.phase == "navsh" then
-        local tr = call(a, { cmd = "take_trump", card = hand[1] })
-        if tr.err then call(a, { cmd = "skip_navsh" }) end
-      elseif msg.phase == "exchanging" then
-        call(a, { cmd = "exchange", cards = json.empty_array })
-      else
-        for _, card in ipairs({ table.unpack(hand) }) do
-          local pr = call(a, { cmd = "play_card", card = card })
-          if not pr.err then break end
-        end
-      end
-    elseif msg.push == "game_end" then
-      break
-    end
-  end
+  -- Watch one room until its game ends naturally; the keeper then
+  -- replaces it.
+  local endCode = fresh[1].code
+  r = call(a, { cmd = "watch", code = endCode })
+  check(not r.err, "watch: " .. tostring(r.err))
+  waitPush(a, "snapshot")
+  waitPush(a, "game_end")
+  call(a, { cmd = "unwatch" })
 
   local after
   for _ = 1, 20 do

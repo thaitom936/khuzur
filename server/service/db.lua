@@ -41,7 +41,8 @@ local SCHEMA = {
   [[CREATE TABLE IF NOT EXISTS user_stat (
       uid INT UNSIGNED PRIMARY KEY,
       games INT NOT NULL DEFAULT 0,
-      wins INT NOT NULL DEFAULT 0
+      wins INT NOT NULL DEFAULT 0,
+      rating INT NOT NULL DEFAULT 0
     ) CHARSET=utf8mb4]],
   [[CREATE TABLE IF NOT EXISTS match_record (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -50,6 +51,23 @@ local SCHEMA = {
       ended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) CHARSET=utf8mb4]],
 }
+
+-- Rating tiers: higher levels climb slower and risk more per loss.
+local LEVELS = {
+  { min = 0,    win = 20, lose = 0 },
+  { min = 100,  win = 16, lose = 2 },
+  { min = 300,  win = 12, lose = 4 },
+  { min = 700,  win = 10, lose = 6 },
+  { min = 1500, win = 8,  lose = 8 },
+}
+
+local function levelOf(rating)
+  local lv = 1
+  for i, t in ipairs(LEVELS) do
+    if rating >= t.min then lv = i end
+  end
+  return lv
+end
 
 local function newToken()
   return crypt.hexencode(crypt.randomkey()) .. crypt.hexencode(crypt.randomkey())
@@ -63,7 +81,7 @@ end
 -- account on first login.
 local function loginGuestSql(device, name, lang)
   local rows = mysql:query(
-    "SELECT u.uid, u.name, u.lang, u.coins, s.games, s.wins FROM user_auth a" ..
+    "SELECT u.uid, u.name, u.lang, u.coins, s.games, s.wins, s.rating FROM user_auth a" ..
     " JOIN user u ON u.uid = a.uid JOIN user_stat s ON s.uid = u.uid" ..
     " WHERE a.provider = 'guest' AND a.open_id = " .. quote(device))
   if rows.err then error(rows.err) end
@@ -80,7 +98,7 @@ local function loginGuestSql(device, name, lang)
   mysql:query(("INSERT INTO user_auth (provider, open_id, uid) VALUES ('guest', %s, %d)")
     :format(quote(device), uid))
   mysql:query(("INSERT INTO user_stat (uid) VALUES (%d)"):format(uid))
-  return { uid = uid, name = name, lang = lang or "en", coins = 1000, games = 0, wins = 0 }
+  return { uid = uid, name = name, lang = lang or "en", coins = 1000, games = 0, wins = 0, rating = 0 }
 end
 
 local function loginGuestMem(device, name, lang)
@@ -95,6 +113,7 @@ local function loginGuestMem(device, name, lang)
     coins = 1000,
     games = 0,
     wins = 0,
+    rating = 0,
   }
   mem.users[uid] = u
   mem.by_device[device] = uid
@@ -104,6 +123,7 @@ end
 function CMD.login_guest(device, name, lang)
   local user = mysql and loginGuestSql(device, name, lang)
       or loginGuestMem(device, name, lang)
+  user.level = levelOf(user.rating or 0)
   local token = newToken()
   red:setex("sess:" .. token, 30 * 86400, user.uid)
   red:set("sessname:" .. user.uid, user.name)
@@ -116,11 +136,17 @@ function CMD.auth_token(token)
 end
 
 function CMD.get_user(uid)
-  if not mysql then return mem.users[uid] end
+  if not mysql then
+    local u = mem.users[uid]
+    if u then u.level = levelOf(u.rating or 0) end
+    return u
+  end
   local rows = mysql:query(
-    ("SELECT u.uid, u.name, u.lang, u.coins, s.games, s.wins FROM user u" ..
+    ("SELECT u.uid, u.name, u.lang, u.coins, s.games, s.wins, s.rating FROM user u" ..
      " JOIN user_stat s ON s.uid = u.uid WHERE u.uid = %d"):format(uid))
-  return rows[1]
+  local u = rows[1]
+  if u then u.level = levelOf(u.rating or 0) end
+  return u
 end
 
 function CMD.set_name(uid, name)
@@ -145,20 +171,27 @@ end
 local dailyProgress -- defined in the daily section below
 
 --- results: list of {uid, win (bool), score, tricks}, humans only.
+--- Rating moves by the player's own level tier (win gains shrink and
+--- loss costs grow as the level rises); the leaderboard ranks by rating.
 function CMD.game_result(mode, results)
   for _, r in ipairs(results) do
     dailyProgress(r.uid, r.win, r.tricks)
+    local user = CMD.get_user(r.uid)
+    local rating = user and user.rating or 0
+    local tier = LEVELS[levelOf(rating)]
+    local delta = r.win and tier.win or -tier.lose
+    rating = math.max(0, rating + delta)
     if mysql then
-      mysql:query(("UPDATE user_stat SET games = games + 1, wins = wins + %d" ..
-        " WHERE uid = %d"):format(r.win and 1 or 0, r.uid))
+      mysql:query(("UPDATE user_stat SET games = games + 1, wins = wins + %d," ..
+        " rating = %d WHERE uid = %d")
+        :format(r.win and 1 or 0, rating, r.uid))
     elseif mem.users[r.uid] then
       local u = mem.users[r.uid]
       u.games = u.games + 1
       u.wins = u.wins + (r.win and 1 or 0)
+      u.rating = rating
     end
-    if r.win then
-      red:zincrby("rank:wins", 1, r.uid)
-    end
+    red:zadd("rank:rating", rating, r.uid)
   end
   if mysql then
     local json = require "json"
@@ -169,21 +202,24 @@ function CMD.game_result(mode, results)
 end
 
 function CMD.rank_top(uid, count)
-  local raw = red:zrevrange("rank:wins", 0, (count or 50) - 1, "WITHSCORES")
+  local raw = red:zrevrange("rank:rating", 0, (count or 50) - 1, "WITHSCORES")
   local top = {}
   for i = 1, #raw, 2 do
     local id = tonumber(raw[i])
+    local rating = tonumber(raw[i + 1])
     top[#top + 1] = {
       uid = id,
-      wins = tonumber(raw[i + 1]),
+      rating = rating,
+      level = levelOf(rating),
       name = red:get("sessname:" .. id) or ("Player" .. id),
     }
   end
   local me
   if uid then
-    local r = red:zrevrank("rank:wins", uid)
+    local r = red:zrevrank("rank:rating", uid)
     if r then
-      me = { rank = r + 1, wins = tonumber(red:zscore("rank:wins", uid)) }
+      local rating = tonumber(red:zscore("rank:rating", uid))
+      me = { rank = r + 1, rating = rating, level = levelOf(rating) }
     end
   end
   return { top = top, me = me }
@@ -369,8 +405,11 @@ function CMD.daily_state(uid)
       claimed = h["claimed:" .. t.id] == 1,
     }
   end
+  local user = CMD.get_user(uid)
   return {
     coins = CMD.coins_get(uid),
+    rating = user and user.rating or 0,
+    level = user and user.level or 1,
     bonus = DAILY_BONUS,
     bonus_claimed = h.bonus == 1,
     tasks = tasks,

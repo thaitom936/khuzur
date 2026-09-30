@@ -484,34 +484,8 @@ function CMD.init(opts)
 end
 
 function CMD.join(p)
-  if started then
-    -- Sitting down mid-game: take over a bot seat (free tables only,
-    -- so the pot stays consistent).
-    if stake > 0 then return nil, "already_started" end
-    local seat
-    for i, q in ipairs(players) do
-      if q.bot then seat = i break end
-    end
-    if not seat then return nil, "room_full" end
-    -- A seated user must no longer receive the spectator snapshot afterwards.
-    watchers[p.uid] = nil
-    players[seat] = {
-      uid = p.uid, name = p.name, agent = p.agent, fd = p.fd,
-      bot = false, online = true, misses = 0,
-    }
-    -- (hub.join_room registers uid -> room after this call returns.)
-    -- Everyone sees the new seating; each viewer gets their own snapshot.
-    for i, q in ipairs(players) do
-      push(q, snapshot(i))
-    end
-    for _, w in pairs(watchers) do
-      push(w, snapshot(nil))
-    end
-    if phaseActive() and st.turn == seat then
-      announceTurn() -- restart this turn's timer as a human turn
-    end
-    return true
-  end
+  -- One game is one sitting: once play starts, nobody new sits down.
+  if started then return nil, "already_started" end
   if #players >= size then return nil, "room_full" end
   watchers[p.uid] = nil
   players[#players + 1] = {
@@ -525,7 +499,31 @@ function CMD.join(p)
 end
 
 function CMD.leave(uid)
-  if started then return nil, "already_started" end
+  if started then
+    -- Leaving mid-game forfeits: the seat is handed to a bot for good,
+    -- the leaver takes a recorded loss, and is free to join a new game.
+    local seat, p = nil, nil
+    for i, q in ipairs(players) do
+      if q.uid == uid then seat, p = i, q break end
+    end
+    if not seat then return nil, "not_in_room" end
+    skynet.send(".db", "lua", "game_result", mode, {
+      { uid = uid, win = false, tricks = totalTricks[seat] or 0 },
+    })
+    players[seat] = { bot = true, name = p.name, misses = 0 }
+    skynet.send(".hub", "lua", "left_room", uid)
+    -- Everyone sees the takeover; each viewer gets their own snapshot.
+    for i, q in ipairs(players) do
+      push(q, snapshot(i))
+    end
+    for _, w in pairs(watchers) do
+      push(w, snapshot(nil))
+    end
+    if phaseActive() and st.turn == seat then
+      announceTurn() -- the bot takes over this turn immediately
+    end
+    return true
+  end
   for i, p in ipairs(players) do
     if p.uid == uid then
       table.remove(players, i)

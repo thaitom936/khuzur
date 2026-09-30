@@ -17,6 +17,7 @@ import '../game/replay_controller.dart';
 import '../l10n/strings.dart';
 import '../rules/card.dart' as rules;
 import '../rules/rules.dart';
+import '../settings/settings.dart';
 import '../style/confetti.dart';
 import '../style/my_button.dart';
 import '../style/palette.dart';
@@ -221,17 +222,43 @@ class _TableViewState extends State<TableView> {
     if (game is RemoteGameController) {
       if (game.spectating) {
         game.unwatch();
+        GoRouter.of(context).go('/online');
       } else if (game.started && !game.gameOver) {
-        game.suspended = true; // stay seated; auto-play covers the turns
+        _confirmForfeit(game); // leaving mid-game forfeits the seat
       } else {
         game.leaveRoom();
+        GoRouter.of(context).go('/online');
       }
-      GoRouter.of(context).go('/online');
     } else if (game is ReplayController) {
       GoRouter.of(context).go('/online');
     } else {
       GoRouter.of(context).go('/');
     }
+  }
+
+  void _confirmForfeit(RemoteGameController game) {
+    final l = L(context.read<SettingsController>().lang.value);
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l('leaveTitle')),
+        content: Text(l('leaveBody')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(l('cancel')),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              game.abandon();
+              GoRouter.of(context).go('/online');
+            },
+            child: Text(l('leaveBtn')),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _tableLayout(GameController game, L l, CardTableMotionState motion) {
