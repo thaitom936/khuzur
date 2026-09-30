@@ -351,6 +351,28 @@ local function botAct()
   end
 end
 
+--- Humanlike thinking time for a bot turn, in centiseconds: forced moves
+--- come fast, open choices take longer, and sometimes a bot just thinks.
+local function botThink()
+  local lo, hi = T.bot_delay, T.bot_delay_max
+  if hi <= lo then return lo end
+  local span = hi - lo
+  local d
+  if st.phase == "playing" then
+    local legal = engine.legalCards(st, st.turn)
+    if #legal == 1 then
+      return lo + math.random(0, span // 4) -- forced card, play it quickly
+    end
+    d = lo + math.random(0, span)
+  else
+    d = lo + math.random(span // 4, span) -- decisions take a beat longer
+  end
+  if math.random(8) == 1 then
+    d = d + math.random(span // 2, span) -- the occasional long think
+  end
+  return d
+end
+
 local function onTimeout()
   local p = players[st.turn]
   p.misses = (p.misses or 0) + 1
@@ -378,7 +400,7 @@ announceTurn = function()
   }
   local cur = players[st.turn]
   if cur.bot or cur.auto or cur.online == false then
-    skynet.timeout(T.bot_delay, guard(id, botAct))
+    skynet.timeout(botThink(), guard(id, botAct))
   else
     skynet.timeout(timeout, guard(id, onTimeout))
   end
@@ -637,6 +659,7 @@ skynet.start(function()
   T.exchange = tonumber(skynet.getenv "timeout_exchange") or 1500
   T.play = tonumber(skynet.getenv "timeout_play") or 1500
   T.bot_delay = tonumber(skynet.getenv "bot_delay") or 80
+  T.bot_delay_max = tonumber(skynet.getenv "bot_delay_max") or T.bot_delay * 4
   T.round_pause = tonumber(skynet.getenv "round_pause") or 500
   skynet.dispatch("lua", function(_, _, cmd, ...)
     skynet.retpack(CMD[cmd](...))

@@ -64,7 +64,9 @@ class EasyBot extends Bot {
 }
 
 class NormalBot extends Bot {
-  const NormalBot();
+  final Random _rng;
+
+  NormalBot([Random? rng]) : _rng = rng ?? Random();
 
   @override
   bool decidePlay(GameState state, int seat) {
@@ -74,7 +76,8 @@ class NormalBot extends Bot {
       if (suitOf(c) == trumpSuit) strength += 2;
       if (rankOf(c) >= 13) strength += 1; // K, A of any suit
     }
-    return strength >= 3;
+    // The threshold jitters a little so bots don't feel identical.
+    return strength >= 2 + _rng.nextInt(3);
   }
 
   @override
@@ -92,6 +95,10 @@ class NormalBot extends Bot {
   @override
   String choosePlay(GameState state, int seat) {
     final legal = state.legalCards(seat);
+    // A touch of human inconsistency: sometimes not the best card.
+    if (legal.length > 1 && _rng.nextInt(100) < 12) {
+      return cardString(legal[_rng.nextInt(legal.length)]);
+    }
     final trumpSuit = state.trumpSuit;
 
     // Cheapest card first: low ranks before high, non-trumps before trumps.

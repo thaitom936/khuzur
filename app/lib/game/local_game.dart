@@ -16,7 +16,6 @@ import '../rules/rules.dart';
 import 'game_controller.dart';
 
 class LocalGameController extends GameController {
-  static const botDelay = Duration(milliseconds: 700);
   static const trickPause = Duration(milliseconds: 1100);
 
   @override
@@ -88,7 +87,7 @@ class LocalGameController extends GameController {
     this.config = const RuleConfig(),
     Bot? bot,
     Random? random,
-  }) : _bot = bot ?? const NormalBot(),
+  }) : _bot = bot ?? NormalBot(),
        _rng = random ?? Random.secure() {
     dealer = _rng.nextInt(numPlayers);
     _deal(List.filled(numPlayers, config.startScore));
@@ -236,6 +235,19 @@ class LocalGameController extends GameController {
     });
   }
 
+  /// Humanlike thinking time: forced moves come fast, open choices take
+  /// longer, and sometimes a bot just thinks.
+  Duration _botThink() {
+    const lo = 600, hi = 2600;
+    if (state.phase == Phase.playing &&
+        state.legalCards(state.turn).length == 1) {
+      return Duration(milliseconds: lo + _rng.nextInt(400));
+    }
+    var d = lo + _rng.nextInt(hi - lo);
+    if (_rng.nextInt(8) == 0) d += 1000 + _rng.nextInt(1500);
+    return Duration(milliseconds: d);
+  }
+
   Future<void> _runBots() async {
     if (_botsRunning) return;
     _botsRunning = true;
@@ -245,7 +257,7 @@ class LocalGameController extends GameController {
           // Let the finished trick stay on screen before the next play.
           await Future<void>.delayed(trickPause);
         } else {
-          await Future<void>.delayed(botDelay);
+          await Future<void>.delayed(_botThink());
         }
         if (_disposed || !_phaseActive || humanTurn) break;
         _applyBotAction(state.turn);

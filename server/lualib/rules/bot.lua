@@ -8,14 +8,15 @@ local M = {}
 local function suitOf(c) return c // 16 end
 local function rankOf(c) return c % 16 end
 
---- Phase deciding: true to play, false to (try to) pass.
+--- Phase deciding: true to play, false to (try to) pass. The threshold
+--- jitters a little so different bots don't feel identical.
 function M.decidePlay(state, seat)
   local strength = 0
   for _, c in ipairs(state.players[seat].hand) do
     if suitOf(c) == state.trumpSuit then strength = strength + 2 end
     if rankOf(c) >= 13 then strength = strength + 1 end -- K, A of any suit
   end
-  return strength >= 3
+  return strength >= 2 + math.random(0, 2)
 end
 
 --- Dealer's trade for the face-up trump: the card to give up, or nil.
@@ -78,6 +79,10 @@ end
 --- Phase playing: one card string out of legalCards.
 function M.choosePlay(state, seat)
   local legalStrs = engine.legalCards(state, seat)
+  -- A touch of human inconsistency: sometimes not the best card.
+  if #legalStrs > 1 and math.random(100) <= 12 then
+    return legalStrs[math.random(#legalStrs)]
+  end
   local legal = {}
   for i, s in ipairs(legalStrs) do legal[i] = engine.parseCard(s) end
   local trumpSuit = state.trumpSuit

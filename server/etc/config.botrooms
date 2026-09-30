@@ -24,6 +24,7 @@ timeout_decide = 100
 timeout_exchange = 100
 timeout_play = 100
 bot_delay = 15
+bot_delay_max = 30
 round_pause = 30
 quick_size = 4
 match_min_humans = 1
