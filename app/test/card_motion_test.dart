@@ -220,19 +220,29 @@ void main() {
         await _mount(tester, session, game, size: size, scale: scale);
         Rect rect(String key) => tester.getRect(find.byKey(ValueKey(key)));
         final me = rect('table-seat-3');
-        final upperRight = rect('table-seat-0');
+        final upperRight = rect('table-seat-4');
+        final upperMiddle = rect('table-seat-0');
         final upperLeft = rect('table-seat-1');
         final lowerLeft = rect('table-seat-2');
-        final lowerRight = rect('table-seat-4');
-        expect(me.center.dx, closeTo(size.width / 2, 1));
+        expect(me.center.dx, closeTo(size.width * .78, 1));
         expect(upperRight.top, upperLeft.top);
-        expect(lowerRight.top, lowerLeft.top);
+        expect(upperMiddle.top, upperLeft.top);
+        expect(me.top, lowerLeft.top);
+        expect(me.width, greaterThanOrEqualTo(88));
+        expect(upperLeft.right, lessThan(upperMiddle.left));
+        expect(upperMiddle.right, lessThan(upperRight.left));
         expect(upperLeft.bottom, lessThan(lowerLeft.top));
-        expect(lowerLeft.bottom, lessThan(me.top));
         expect(me.bottom, lessThan(rect('table-hand').top));
         expect(rect('table-stock').overlaps(lowerLeft), isFalse);
+        expect(rect('table-stock').overlaps(me), isFalse);
+        expect(rect('table-center').overlaps(upperMiddle), isFalse);
+        expect(rect('table-center').bottom, lessThan(lowerLeft.top - 36));
         expect(rect('table-actions').overlaps(me), isFalse);
-        expect(rect('table-actions').overlaps(lowerRight), isFalse);
+        expect(rect('table-actions').overlaps(lowerLeft), isFalse);
+        expect(
+          rect('table-actions').top,
+          greaterThanOrEqualTo(rect('table-hand').bottom),
+        );
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
       },
@@ -380,10 +390,14 @@ void main() {
     );
     expect(tester.getCenter(wins).dx, closeTo(tester.getCenter(avatar).dx, .1));
     await tester.pump(const Duration(seconds: 2));
-    final ring = tester.widget<CircularProgressIndicator>(
-      find.byKey(const ValueKey('own-turn-progress')),
-    );
-    expect(ring.value, closeTo(2 / 3, .03));
+    final ring =
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const ValueKey('own-turn-progress')),
+                )
+                .painter!
+            as FrameCountdownPainter;
+    expect(ring.progress, closeTo(2 / 3, .03));
     expect(ring.color, const Color(0xffd5fff6));
     expect(tester.takeException(), isNull);
   });

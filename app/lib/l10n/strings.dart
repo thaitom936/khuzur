@@ -37,6 +37,85 @@ const chatPhrases = {
 };
 
 const _table = <String, Map<String, String>>{
+  'rtcTitle': {
+    'en': "Table voice & video",
+    'mn': "Ширээний дуу, дүрс",
+    'zh': "同桌语音和视频",
+  },
+  'rtcPrivacy': {
+    'en':
+        "Join to listen. Microphone and camera stay off until you enable them.",
+    'mn': "Сонсохоор нэгдэнэ. Микрофон, камерыг өөрөө асаана.",
+    'zh': "加入后先收听，麦克风和摄像头由你主动开启。",
+  },
+  'rtcAndroidOnly': {
+    'en': "Voice & video is available in the Android app.",
+    'mn': "Дуу, дүрс Android апп дээр ажиллана.",
+    'zh': "语音和视频请使用 Android 客户端。",
+  },
+  'rtcJoin': {'en': "Join audio", 'mn': "Дуут ярианд нэгдэх", 'zh': "加入语音"},
+  'rtcLeave': {'en': "Leave call", 'mn': "Ярианаас гарах", 'zh': "退出通话"},
+  'rtcMicOn': {'en': "Unmute", 'mn': "Микрофон асаах", 'zh': "开启麦克风"},
+  'rtcMicOff': {'en': "Mute", 'mn': "Микрофон унтраах", 'zh': "关闭麦克风"},
+  'rtcCameraOn': {'en': "Camera on", 'mn': "Камер асаах", 'zh': "开启摄像头"},
+  'rtcCameraOff': {'en': "Camera off", 'mn': "Камер унтраах", 'zh': "关闭摄像头"},
+  'rtcSwitchCamera': {
+    'en': "Switch camera",
+    'mn': "Камер солих",
+    'zh': "切换摄像头",
+  },
+  'rtcMutePeer': {
+    'en': "Mute this player",
+    'mn': "Тоглогчийн дууг хаах",
+    'zh': "屏蔽该玩家声音",
+  },
+  'rtcUnmutePeer': {
+    'en': "Unmute this player",
+    'mn': "Тоглогчийн дууг нээх",
+    'zh': "恢复该玩家声音",
+  },
+  'rtcWeak': {
+    'en': "Weak network · video may pause to preserve audio",
+    'mn': "Сүлжээ сул · дууг хадгалахын тулд дүрс түр зогсож болно",
+    'zh': "网络较弱，视频可能暂停以优先保障语音",
+  },
+  'rtcReconnecting': {
+    'en': "Reconnecting call…",
+    'mn': "Яриаг дахин холбож байна…",
+    'zh': "通话重连中…",
+  },
+  'error_rtc_unavailable': {
+    'en': "Table calls are not available yet. You can keep playing.",
+    'mn': "Ширээний яриа одоогоор боломжгүй. Тоглолтоо үргэлжлүүлээрэй.",
+    'zh': "同桌通话暂未开通，可继续打牌。",
+  },
+  'error_rtc_not_seated': {
+    'en': "Take a seat to join this table’s call.",
+    'mn': "Ширээнд сууж байж ярианд нэгдэнэ.",
+    'zh': "入座后才能加入本桌通话。",
+  },
+  'error_rtc_retry': {
+    'en': "Please wait a moment and try again.",
+    'mn': "Түр хүлээгээд дахин оролдоно уу.",
+    'zh': "请稍后重试。",
+  },
+  'error_rtc_failed': {
+    'en': "Call interrupted. Rejoin when ready; your game continues.",
+    'mn': "Яриа тасарлаа. Дахин нэгдэж болно; тоглолт үргэлжилнэ.",
+    'zh': "通话中断，可重新加入；牌局不受影响。",
+  },
+  'error_rtc_mic_permission': {
+    'en':
+        "Microphone permission is off. Allow it in app settings to speak. You can still listen.",
+    'mn':
+        "Микрофоны зөвшөөрөл хаалттай. Аппын тохиргооноос зөвшөөрнө үү. Сонсох боломжтой.",
+    'zh': "未获得麦克风权限，可在系统设置中允许；仍可收听。",
+  },
+  'error_rtc_camera_permission': {
+    'en': "Camera permission is off. Allow it in app settings to use video.",
+    'mn': "Камерын зөвшөөрөл хаалттай. Аппын тохиргооноос зөвшөөрнө үү.",
+    'zh': "未获得摄像头权限，可在系统设置中允许；语音不受影响。",
+  },
   'lobby': {'en': 'Lobby', 'mn': 'Танхим', 'zh': '大厅'},
   'profile': {'en': 'My profile', 'mn': 'Миний мэдээлэл', 'zh': '我的'},
   'connected': {

@@ -16,6 +16,7 @@ class SeatView {
   final bool online;
   final bool auto;
   final bool bot;
+  final int? rtcUid;
 
   const SeatView({
     required this.name,
@@ -26,6 +27,7 @@ class SeatView {
     this.online = true,
     this.auto = false,
     this.bot = false,
+    this.rtcUid,
   });
 }
 

@@ -256,6 +256,7 @@ class RemoteGameController extends GameController {
       for (final s in seatList.cast<Map<String, dynamic>>())
         SeatView(
           name: s['name'] as String? ?? '?',
+          rtcUid: s['rtc_uid'] as int?,
           score: s['score'] as int? ?? config.startScore,
           tricks: s['tricks'] as int? ?? 0,
           wonCards: [
@@ -288,6 +289,7 @@ class RemoteGameController extends GameController {
     final s = seats[seat];
     seats[seat] = SeatView(
       name: s.name,
+      rtcUid: s.rtcUid,
       score: score ?? s.score,
       tricks: tricks ?? s.tricks,
       wonCards: wonCards ?? s.wonCards,

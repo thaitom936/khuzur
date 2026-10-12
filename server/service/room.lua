@@ -5,6 +5,17 @@
 local skynet = require "skynet"
 local engine = require "rules.engine"
 local bot = require "rules.bot"
+local function newRtcChannel()
+  -- skynet.crypt.randomkey uses libc random(), not secure entropy.
+  local source = assert(io.open("/dev/urandom", "rb"))
+  local bytes = source:read(16)
+  source:close()
+  assert(bytes and #bytes == 16, "RTC channel entropy unavailable")
+  return "kh_" .. (bytes:gsub(".", function(c)
+    return string.format("%02x", c:byte())
+  end))
+end
+local rtcChannel = newRtcChannel()
 
 local mode, size, code
 local stake = 0 -- per-player entry fee, escrowed by the agents
@@ -52,6 +63,7 @@ local function seatInfos()
     local e = st and st.players[i]
     seats[#seats + 1] = {
       name = p.name,
+      rtc_uid = not p.bot and p.uid or nil,
       bot = p.bot or false,
       online = p.online ~= false,
       auto = p.auto or false,
@@ -645,6 +657,20 @@ function CMD.action(uid, msg)
   end
   if err then return nil, err end
   return true
+end
+
+-- Bind each grant to the current seat AND current socket, including renewals.
+-- Spectators and superseded login sessions cannot obtain a grant.
+function CMD.rtc_grant(uid, agent, fd)
+  local _, p = seatOf(uid)
+  if not p or p.bot or not p.online or p.agent ~= agent or p.fd ~= fd
+      or (st and st.phase == "game_end") then
+    return nil, "rtc_not_seated"
+  end
+  if type(uid) ~= "number" or uid < 1 or uid > 0xffffffff then
+    return nil, "rtc_unavailable"
+  end
+  return { channel = rtcChannel, uid = uid, code = code }
 end
 
 function CMD.rejoin(uid, agent, fd)

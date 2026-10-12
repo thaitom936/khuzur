@@ -6,6 +6,7 @@
 local skynet = require "skynet"
 local websocket = require "http.websocket"
 local json = require "json"
+local rtcToken = require "rtc_token"
 
 local conns = {} -- fd -> {uid, name}
 
@@ -78,6 +79,24 @@ local function authed(fn)
     return fn(fd, c, msg)
   end
 end
+
+HANDLERS.rtc_token = authed(function(fd, c, msg)
+  -- Rate-limit per connection; renewals normally happen every four minutes.
+  if c.rtcLast and skynet.now() - c.rtcLast < 200 then return nil, "rtc_retry" end
+  c.rtcLast = skynet.now()
+  local room = roomOf(c.uid)
+  if not room then return nil, "rtc_not_seated" end
+  local grant, err = skynet.call(room, "lua", "rtc_grant", c.uid, skynet.self(), fd)
+  if not grant then return nil, err end
+  if msg.code ~= grant.code then return nil, "rtc_not_seated" end
+  local data, tokenErr = rtcToken.issue(grant.channel, grant.uid)
+  if not data then return nil, tokenErr end
+  -- HTTP yielded: the player may have left or logged in on another device.
+  if conns[fd] ~= c or roomOf(c.uid) ~= room then return nil, "rtc_not_seated" end
+  local current = skynet.call(room, "lua", "rtc_grant", c.uid, skynet.self(), fd)
+  if not current or current.channel ~= grant.channel then return nil, "rtc_not_seated" end
+  return data
+end)
 
 HANDLERS.set_name = authed(function(fd, c, msg)
   local name = tostring(msg.name or "")

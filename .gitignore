@@ -1,0 +1,4 @@
+# Local RTC credentials (never ship in the client).
+server/.env.rtc
+__pycache__/
+*.pyc

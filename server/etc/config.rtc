@@ -1,0 +1,3 @@
+include "config"
+start = "test_rtc"
+luaservice = root.."test/?.lua;"..luaservice

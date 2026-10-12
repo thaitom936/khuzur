@@ -15,6 +15,8 @@ import '../game/local_game.dart';
 import '../game/remote_game.dart';
 import '../game/replay_controller.dart';
 import '../l10n/strings.dart';
+import '../rtc/table_call_controller.dart';
+import '../rtc/table_call_widgets.dart';
 import '../rules/card.dart' as rules;
 import '../rules/rules.dart';
 import '../settings/settings.dart';
@@ -46,9 +48,17 @@ class OnlineTableScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final game = context.read<RemoteGameController>();
     return ChangeNotifierProvider<GameController>.value(
-      value: context.read<RemoteGameController>(),
-      child: const TableView(),
+      value: game,
+      child: ChangeNotifierProvider(
+        create: (_) => TableCallController(
+          game.session,
+          game,
+          onCallActive: context.read<AudioController>().setCallActive,
+        ),
+        child: const TableView(),
+      ),
     );
   }
 }
@@ -140,6 +150,7 @@ class _TableViewState extends State<TableView> {
       body: SafeArea(
         child: _tableViewport(
           replay: isReplay,
+          spectating: spectating,
           child: CardTableMotion(
             game: game,
             builder: (context, motion) => Stack(
@@ -162,14 +173,20 @@ class _TableViewState extends State<TableView> {
     );
   }
 
-  Widget _tableViewport({required bool replay, required Widget child}) {
+  Widget _tableViewport({
+    required bool replay,
+    required bool spectating,
+    required Widget child,
+  }) {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Keep cards and actions readable in short windows instead of letting
         // the centre overflow into the player's hand when they sit down.
+        final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1, 2);
+        // Two portrait rows, a clear trick area, hand and a bottom action bar.
+        // Grow for accessibility; on short windows scroll instead of overlap.
         final minimumHeight =
-            (replay ? 1020.0 : 920.0) *
-            MediaQuery.textScalerOf(context).scale(1).clamp(1, 2);
+            404 + (replay || spectating ? 218 : 200) * scale + 2.36 * 88;
         final table = Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
@@ -265,8 +282,8 @@ class _TableViewState extends State<TableView> {
     final spectating = game is RemoteGameController && game.spectating;
     final replay = game is ReplayController;
     final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
-    // Rotate the table around the viewer. Spectators use seat zero as the
-    // bottom anchor, preserving every player's physical position when seated.
+    // Clockwise from the viewer at the lower right: three upper seats and one
+    // lower-left neighbour. Spectators anchor the same arrangement on seat 0.
     final anchor = game.humanSeat >= 0 ? game.humanSeat : 0;
     final others = [
       for (var i = 1; i < game.seats.length; i++)
@@ -275,12 +292,12 @@ class _TableViewState extends State<TableView> {
     final positions = switch (others.length) {
       1 => const [Offset(.5, 0)],
       2 => const [Offset(.75, 0), Offset(.25, 0)],
-      3 => const [Offset(.87, 1), Offset(.5, 0), Offset(.13, 1)],
+      3 => const [Offset(.75, 0), Offset(.25, 0), Offset(.22, 1)],
       _ => const [
-        Offset(.87, 1),
-        Offset(.75, 0),
-        Offset(.25, 0),
-        Offset(.13, 1),
+        Offset(.82, 0),
+        Offset(.5, 0),
+        Offset(.18, 0),
+        Offset(.22, 1),
       ],
     };
     return DefaultTextStyle.merge(
@@ -289,9 +306,19 @@ class _TableViewState extends State<TableView> {
         data: const IconThemeData(color: Colors.white),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final seatWidth = (constraints.maxWidth * .26).clamp(80.0, 124.0);
-            final handBottom = spectating || replay ? 74.0 * scale : 18.0;
-            final ownBottom = (spectating ? 18.0 : handBottom) + 144.0 * scale;
+            final footer = (spectating || replay ? 74.0 : 56.0) * scale;
+            final seatWidth =
+                ((constraints.maxHeight - 404 - 144 * scale - footer) / 2.36)
+                    .clamp(
+                      88.0,
+                      ((constraints.maxWidth - 48) / 3).clamp(88.0, 144.0),
+                    );
+            final frameSize = Size(seatWidth, seatWidth * 1.18);
+            final seatHeight = frameSize.height + 12 + 32 * scale;
+            final handBottom = footer + 12;
+            final ownBottom = handBottom + 144;
+            final topSeat = 60 * scale + 44;
+            final twoLowerSeats = game.seats.length >= 4;
             return Stack(
               fit: StackFit.expand,
               children: [
@@ -301,27 +328,27 @@ class _TableViewState extends State<TableView> {
                     key: ValueKey('table-seat-${others[i]}'),
                     left:
                         constraints.maxWidth * positions[i].dx - seatWidth / 2,
-                    top: positions[i].dy == 0 ? 114 * scale : null,
-                    bottom: positions[i].dy == 1
-                        ? ownBottom + 122 * scale
-                        : null,
+                    top: positions[i].dy == 0 ? topSeat : null,
+                    bottom: positions[i].dy == 1 ? ownBottom : null,
                     width: seatWidth,
                     child: motion.seat(
                       others[i],
-                      _seatPanel(game, l, others[i]),
+                      _seatPanel(game, l, others[i], frameSize),
                     ),
                   ),
                 Positioned(
-                  top: constraints.maxHeight * .26,
+                  key: const ValueKey('table-center'),
+                  top: topSeat + seatHeight + 16,
                   left: 12,
                   right: 12,
-                  height: 150 * scale,
+                  height: 120 + 20 * scale,
                   child: _center(game, l, motion),
                 ),
                 Positioned(
                   key: const ValueKey('table-stock'),
-                  top: constraints.maxHeight * .45,
-                  left: 12,
+                  bottom:
+                      ownBottom + 12 + 32 * scale + (frameSize.height - 54) / 2,
+                  left: constraints.maxWidth * (twoLowerSeats ? .5 : .18) - 40,
                   child: Semantics(
                     label:
                         '${l('trump')} ${suitSymbols[game.trumpSuit]}, ${l('stock')}: ${game.stockCount}',
@@ -333,8 +360,8 @@ class _TableViewState extends State<TableView> {
                             message: l('trumpTakenHint'),
                             child: Container(
                               key: const ValueKey('fixed-trump-suit'),
-                              width: 48,
-                              height: 72,
+                              width: 36,
+                              height: 54,
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(5),
@@ -372,9 +399,9 @@ class _TableViewState extends State<TableView> {
                             ),
                           )
                         else
-                          CardView(game.trumpCard, width: 48),
+                          CardView(game.trumpCard, width: 36),
                         const SizedBox(width: 8),
-                        motion.deck(width: 48, count: game.stockCount),
+                        motion.deck(width: 36, count: game.stockCount),
                       ],
                     ),
                   ),
@@ -382,33 +409,22 @@ class _TableViewState extends State<TableView> {
                 if (game.seats.isNotEmpty)
                   Positioned(
                     key: ValueKey('table-seat-$anchor'),
-                    left: (constraints.maxWidth - seatWidth) / 2,
+                    left:
+                        constraints.maxWidth * (twoLowerSeats ? .78 : .5) -
+                        seatWidth / 2,
                     bottom: ownBottom,
                     width: seatWidth,
-                    child: motion.seat(anchor, _seatPanel(game, l, anchor)),
-                  ),
-                if (!game.isLocal && !spectating && !replay)
-                  Positioned(
-                    left: 16,
-                    bottom: ownBottom + 12,
-                    child: IconButton.filled(
-                      tooltip: l('chat'),
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: context
-                            .read<Palette>()
-                            .backgroundPlaySession,
-                      ),
-                      icon: const Icon(Icons.chat_bubble_outline),
-                      onPressed: () => _showChatSheet(game, l),
+                    child: motion.seat(
+                      anchor,
+                      _seatPanel(game, l, anchor, frameSize),
                     ),
                   ),
                 if (!spectating && !replay)
                   Positioned(
                     key: const ValueKey('table-actions'),
                     right: 12,
-                    bottom: ownBottom,
-                    width: seatWidth,
+                    left: 12,
+                    bottom: 8,
                     child: IgnorePointer(
                       ignoring: motion.dealing,
                       child: _actions(game, l),
@@ -418,7 +434,7 @@ class _TableViewState extends State<TableView> {
                   Positioned(
                     left: 12,
                     right: 12,
-                    bottom: ownBottom + 230 * scale,
+                    bottom: 8,
                     child: _autoBanner(game, l),
                   ),
                 Positioned(
@@ -488,6 +504,14 @@ class _TableViewState extends State<TableView> {
             icon: const Icon(Icons.more_horiz),
             onPressed: () => GoRouter.of(context).push('/settings'),
           ),
+          if (game is RemoteGameController && !game.spectating)
+            IconButton(
+              tooltip: l('chat'),
+              icon: const Icon(Icons.chat_bubble_outline),
+              onPressed: () => _showChatSheet(game, l),
+            ),
+          if (game is RemoteGameController && !game.spectating)
+            const TableCallButton(),
         ],
       ),
     );
@@ -500,7 +524,7 @@ class _TableViewState extends State<TableView> {
     return s.bot && game.isLocal ? '${l('bot')} $seat' : s.name;
   }
 
-  Widget _seatPanel(GameController game, L l, int seat) {
+  Widget _seatPanel(GameController game, L l, int seat, Size frameSize) {
     final s = game.seats[seat];
     final active =
         game.turn == seat &&
@@ -508,6 +532,7 @@ class _TableViewState extends State<TableView> {
         game.phase != Phase.gameEnd;
     final name = game.isLocal ? _seatName(game, l, seat) : s.name;
     final bubble = game.chatBubbles[seat];
+    final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
     // Rule: players who passed sit this round out, dimmed, score unchanged.
     return Opacity(
       opacity: s.decision == Decision.pass ? 0.45 : 1,
@@ -539,14 +564,23 @@ class _TableViewState extends State<TableView> {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: 76,
-                height: 62,
+                width: frameSize.width,
+                height: frameSize.height,
                 child: Stack(
                   children: [
                     Align(
                       alignment: Alignment.topCenter,
                       child: TurnCountdownAvatar(
                         name: s.name,
+                        frameSize: frameSize,
+                        avatar: CallAvatar(
+                          name: s.name,
+                          uid: game is RemoteGameController && !s.bot
+                              ? s.rtcUid
+                              : null,
+                          portrait: true,
+                          size: Size(frameSize.width - 8, frameSize.height - 8),
+                        ),
                         active:
                             game is! ReplayController &&
                             active &&
@@ -556,8 +590,8 @@ class _TableViewState extends State<TableView> {
                       ),
                     ),
                     Positioned(
-                      right: 0,
-                      bottom: 0,
+                      right: 10,
+                      bottom: 10,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 4,
@@ -578,59 +612,76 @@ class _TableViewState extends State<TableView> {
                     ),
                     if (seat == game.dealer)
                       const Positioned(
-                        left: 0,
-                        top: 1,
-                        child: Text(
-                          'D',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
+                        left: 10,
+                        top: 10,
+                        child: CircleAvatar(
+                          radius: 10,
+                          backgroundColor: Color(0xffe3f5f1),
+                          child: Text(
+                            'D',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xff244b43),
+                            ),
                           ),
                         ),
                       ),
                   ],
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 18 * scale,
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 13, height: 1.2),
+                ),
               ),
-              Text(
-                s.decision == Decision.pass
-                    ? l('passed')
-                    : !s.online && !s.bot
-                    ? l('offline')
-                    : ' ',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 10, color: Colors.white70),
-              ),
-              if (bubble != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    bubble < l.phrases.length ? l.phrases[bubble] : '…',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xff244b43),
-                    ),
+              SizedBox(
+                height: 14 * scale,
+                child: Text(
+                  s.decision == Decision.pass
+                      ? l('passed')
+                      : !s.online && !s.bot
+                      ? l('offline')
+                      : ' ',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    height: 1.2,
+                    color: Colors.white70,
                   ),
                 ),
+              ),
             ],
           ),
+          if (bubble != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: frameSize.height * .4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  bubble < l.phrases.length ? l.phrases[bubble] : '…',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xff244b43),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -702,7 +753,14 @@ class _TableViewState extends State<TableView> {
           ),
         ),
         const SizedBox(height: 12),
-        Text(status, textAlign: TextAlign.center),
+        Flexible(
+          child: Text(
+            status,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }
@@ -815,35 +873,30 @@ class _TableViewState extends State<TableView> {
   }
 
   Widget _actions(GameController game, L l) {
-    if (!game.humanTurn) return const SizedBox.shrink();
+    if (!game.humanTurn || game.autoPlaying) return const SizedBox.shrink();
     final audio = context.read<AudioController>();
 
     switch (game.phase) {
       case Phase.deciding:
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _tableButton(
-              onPressed: () {
-                audio.playSfx(SfxType.buttonTap);
-                game.decide(true);
-              },
-              child: Text(l('playBtn')),
-            ),
-            const SizedBox(height: 12),
-            _tableButton(
-              danger: true,
-              onPressed: game.passAllowed
-                  ? () {
-                      audio.playSfx(SfxType.buttonTap);
-                      game.decide(false);
-                    }
-                  : null,
-              child: Text(l('passBtn')),
-            ),
-          ],
-        );
+        return _actionRow([
+          _tableButton(
+            onPressed: () {
+              audio.playSfx(SfxType.buttonTap);
+              game.decide(true);
+            },
+            child: Text(l('playBtn')),
+          ),
+          _tableButton(
+            danger: true,
+            onPressed: game.passAllowed
+                ? () {
+                    audio.playSfx(SfxType.buttonTap);
+                    game.decide(false);
+                  }
+                : null,
+            child: Text(l('passBtn')),
+          ),
+        ]);
       case Phase.exchanging:
         return _tableButton(
           onPressed: () {
@@ -860,41 +913,45 @@ class _TableViewState extends State<TableView> {
       case Phase.navsh:
         // Second exchange round: the dealer may trade the selected card
         // for the face-up trump.
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _tableButton(
-              onPressed: _selected.length == 1
-                  ? () {
-                      audio.playSfx(SfxType.buttonTap);
-                      game.takeTrump(rules.cardString(_selected.first));
-                      setState(_selected.clear);
-                    }
-                  : null,
-              child: Text(
-                '${l('takeTrumpBtn')} '
-                '${rankLabel(game.trumpCard)}${suitSymbols[rules.suitOf(game.trumpCard)]}',
-              ),
+        return _actionRow([
+          _tableButton(
+            onPressed: _selected.length == 1
+                ? () {
+                    audio.playSfx(SfxType.buttonTap);
+                    game.takeTrump(rules.cardString(_selected.first));
+                    setState(_selected.clear);
+                  }
+                : null,
+            child: Text(
+              '${l('takeTrumpBtn')} '
+              '${rankLabel(game.trumpCard)}${suitSymbols[rules.suitOf(game.trumpCard)]}',
             ),
-            const SizedBox(height: 12),
-            _tableButton(
-              danger: true,
-              onPressed: () {
-                audio.playSfx(SfxType.buttonTap);
-                game.skipNavsh();
-                setState(_selected.clear);
-              },
-              child: Text(l('navshSkip')),
-            ),
-          ],
-        );
+          ),
+          _tableButton(
+            danger: true,
+            onPressed: () {
+              audio.playSfx(SfxType.buttonTap);
+              game.skipNavsh();
+              setState(_selected.clear);
+            },
+            child: Text(l('navshSkip')),
+          ),
+        ]);
       case Phase.playing:
         return const SizedBox.shrink();
       default:
         return const SizedBox.shrink();
     }
   }
+
+  Widget _actionRow(List<Widget> buttons) => Row(
+    children: [
+      for (var i = 0; i < buttons.length; i++) ...[
+        if (i > 0) const SizedBox(width: 12),
+        Expanded(child: buttons[i]),
+      ],
+    ],
+  );
 
   Widget _tableButton({
     required Widget child,

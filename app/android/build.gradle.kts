@@ -1,3 +1,7 @@
+// Agora and Iris read this root property; their API 31 fallback is too old
+// for the AndroidX dependencies in the current Flutter engine.
+extra["compileSdkVersion"] = 36
+
 allprojects {
     repositories {
         google()

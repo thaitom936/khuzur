@@ -27,6 +27,19 @@ class AudioController {
   final List<AudioPlayer> _sfxPlayers;
 
   int _currentSfxPlayer = 0;
+  bool _callActive = false;
+
+  /// Pause music during table calls without changing the user's preferences.
+  void setCallActive(bool active) {
+    _callActive = active;
+    if (active) {
+      _musicPlayer.pause();
+    } else if ((_lifecycleNotifier?.value == AppLifecycleState.resumed) &&
+        (_settings?.audioOn.value ?? false) &&
+        (_settings?.musicOn.value ?? false)) {
+      _startOrResumeMusic();
+    }
+  }
 
   final Queue<Song> _playlist;
 
@@ -104,7 +117,7 @@ class AudioController {
     final currentPlayer = _sfxPlayers[_currentSfxPlayer];
     currentPlayer.play(
       AssetSource('sfx/$filename'),
-      volume: soundTypeToVolume(type),
+      volume: soundTypeToVolume(type) * (_callActive ? 0.25 : 1),
     );
     _currentSfxPlayer = (_currentSfxPlayer + 1) % _sfxPlayers.length;
   }
@@ -203,6 +216,7 @@ class AudioController {
   }
 
   Future<void> _playCurrentSongInPlaylist() async {
+    if (_callActive) return;
     _log.info(() => 'Playing ${_playlist.first} now.');
     try {
       await _musicPlayer.play(AssetSource('music/${_playlist.first.filename}'));
@@ -234,6 +248,7 @@ class AudioController {
   }
 
   void _startOrResumeMusic() async {
+    if (_callActive) return;
     if (_musicPlayer.source == null) {
       _log.info(
         'No music source set. '
