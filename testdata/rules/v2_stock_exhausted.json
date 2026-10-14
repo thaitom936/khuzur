@@ -1,0 +1,72 @@
+{
+  "hands": [
+    [
+      "AC",
+      "KC",
+      "QC",
+      "JC",
+      "TC"
+    ],
+    [
+      "9C",
+      "8C",
+      "7C",
+      "AD",
+      "KD"
+    ]
+  ],
+  "trump": "7H",
+  "stock": [
+    "AH"
+  ],
+  "steps": [
+    {
+      "decide": {
+        "seat": 1,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "exchange": {
+        "seat": 1,
+        "cards": [
+          "7C"
+        ]
+      }
+    },
+    {
+      "expect": {
+        "phase": "navsh",
+        "turn": 0
+      }
+    },
+    {
+      "skip": {
+        "seat": 0
+      }
+    },
+    {
+      "expect": {
+        "phase": "playing",
+        "turn": 1
+      }
+    },
+    {
+      "legal": {
+        "seat": 1,
+        "cards": [
+          "AH"
+        ]
+      }
+    }
+  ],
+  "name": "rules v2: stock_exhausted",
+  "players": 2,
+  "dealer": 0
+}

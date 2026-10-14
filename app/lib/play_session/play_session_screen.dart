@@ -18,7 +18,9 @@ import '../l10n/strings.dart';
 import '../rtc/table_call_controller.dart';
 import '../rtc/table_call_widgets.dart';
 import '../rules/card.dart' as rules;
+import '../rules/mongol13.dart';
 import '../rules/rules.dart';
+import '../rules/thousand.dart';
 import '../settings/settings.dart';
 import '../style/confetti.dart';
 import '../style/my_button.dart';
@@ -76,6 +78,8 @@ class _TableViewState extends State<TableView> {
   Phase? _lastPhase;
   Timer? _clock;
   int _shownPlayError = 0;
+  int _durakTarget = 0;
+  int _thousandChoice = 100;
 
   @override
   void initState() {
@@ -121,11 +125,19 @@ class _TableViewState extends State<TableView> {
     final isReplay = game is ReplayController;
     final spectating = game is RemoteGameController && game.spectating;
 
-    if (game is RemoteGameController && game.spectating && !game.started) {
+    if (game is RemoteGameController && !game.started) {
       return Scaffold(
         backgroundColor: palette.backgroundMain,
         appBar: AppBar(
-          title: Text(l('waitingFriends')),
+          title: Text(
+            '${game.isThousand
+                ? 'Thousand · '
+                : (game.isDurak || game.isThousand)
+                ? 'Durak · '
+                : game.isMongol13
+                ? 'Mongol 13 · '
+                : ''}${game.roomCode ?? l('waitingFriends')}',
+          ),
           leading: IconButton(
             tooltip: l('back'),
             icon: const Icon(Icons.arrow_back),
@@ -141,31 +153,80 @@ class _TableViewState extends State<TableView> {
               ),
           ],
         ),
-        bottomNavigationBar: SafeArea(child: SpectatorControls(game: game)),
+        bottomNavigationBar: SafeArea(
+          child: game.spectating
+              ? SpectatorControls(game: game)
+              : Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(l('waitingFriends')),
+                      if (game.humanSeat == 0 &&
+                          (game.isThousand
+                              ? game.seats.length == 3
+                              : (!(game.isMongol13 || game.isDurak) ||
+                                    game.seats.length >= 2)))
+                        FilledButton(
+                          onPressed: () async {
+                            try {
+                              await game.session.client.call('start_room');
+                            } catch (_) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(l.error('generic'))),
+                                );
+                              }
+                            }
+                          },
+                          child: Text(
+                            l(
+                              game.isMongol13 || game.isDurak || game.isThousand
+                                  ? 'm13Start'
+                                  : 'startNow',
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+        ),
       );
     }
 
     return Scaffold(
       backgroundColor: palette.backgroundPlaySession,
-      body: SafeArea(
-        child: _tableViewport(
-          replay: isReplay,
-          spectating: spectating,
-          child: CardTableMotion(
-            game: game,
-            builder: (context, motion) => Stack(
-              children: [
-                _tableLayout(game, l, motion),
-                if (!isReplay &&
-                    !motion.animating &&
-                    game.phase == Phase.roundEnd)
-                  _roundEndOverlay(game, l),
-                if (!isReplay &&
-                    !spectating &&
-                    !motion.animating &&
-                    game.phase == Phase.gameEnd)
-                  _gameEndOverlay(game, l),
-              ],
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/images/bg.jpg'),
+            fit: BoxFit.cover,
+            alignment: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: _tableViewport(
+            replay: isReplay,
+            spectating: spectating,
+            child: CardTableMotion(
+              game: game,
+              builder: (context, motion) => Stack(
+                children: [
+                  _tableLayout(game, l, motion),
+                  if (!isReplay &&
+                      !motion.animating &&
+                      game.phase == Phase.roundEnd)
+                    _roundEndOverlay(game, l),
+                  if (!isReplay &&
+                      (!spectating ||
+                          game.isMongol13 ||
+                          game.isDurak ||
+                          game.isThousand) &&
+                      !motion.animating &&
+                      game.phase == Phase.gameEnd)
+                    _gameEndOverlay(game, l),
+                ],
+              ),
             ),
           ),
         ),
@@ -186,7 +247,16 @@ class _TableViewState extends State<TableView> {
         // Two portrait rows, a clear trick area, hand and a bottom action bar.
         // Grow for accessibility; on short windows scroll instead of overlap.
         final minimumHeight =
-            404 + (replay || spectating ? 218 : 200) * scale + 2.36 * 88;
+            404 +
+            (context.read<GameController>().isThousand ? 60 + 80 * scale : 0) +
+            (replay || spectating
+                    ? 218
+                    : (context.read<GameController>().isDurak ||
+                          context.read<GameController>().isThousand)
+                    ? 248
+                    : 200) *
+                scale +
+            2.36 * 88;
         final table = Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
@@ -293,6 +363,13 @@ class _TableViewState extends State<TableView> {
       1 => const [Offset(.5, 0)],
       2 => const [Offset(.75, 0), Offset(.25, 0)],
       3 => const [Offset(.75, 0), Offset(.25, 0), Offset(.22, 1)],
+      5 => const [
+        Offset(.82, 0),
+        Offset(.5, 0),
+        Offset(.18, 0),
+        Offset(.16, 1),
+        Offset(.5, 1),
+      ],
       _ => const [
         Offset(.82, 0),
         Offset(.5, 0),
@@ -306,9 +383,20 @@ class _TableViewState extends State<TableView> {
         data: const IconThemeData(color: Colors.white),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final footer = (spectating || replay ? 74.0 : 56.0) * scale;
+            final footer =
+                (spectating || replay
+                    ? 74.0
+                    : (game.isDurak || game.isThousand)
+                    ? 104.0
+                    : 56.0) *
+                scale;
             final seatWidth =
-                ((constraints.maxHeight - 404 - 144 * scale - footer) / 2.36)
+                ((constraints.maxHeight -
+                            404 -
+                            (game.isThousand ? 60 + 80 * scale : 0) -
+                            144 * scale -
+                            footer) /
+                        2.36)
                     .clamp(
                       88.0,
                       ((constraints.maxWidth - 48) / 3).clamp(88.0, 144.0),
@@ -341,76 +429,88 @@ class _TableViewState extends State<TableView> {
                   top: topSeat + seatHeight + 16,
                   left: 12,
                   right: 12,
-                  height: 120 + 20 * scale,
+                  height: game.isThousand
+                      ? 180 + 100 * scale
+                      : 120 + 20 * scale,
                   child: _center(game, l, motion),
                 ),
-                Positioned(
-                  key: const ValueKey('table-stock'),
-                  bottom:
-                      ownBottom + 12 + 32 * scale + (frameSize.height - 54) / 2,
-                  left: constraints.maxWidth * (twoLowerSeats ? .5 : .18) - 40,
-                  child: Semantics(
-                    label:
-                        '${l('trump')} ${suitSymbols[game.trumpSuit]}, ${l('stock')}: ${game.stockCount}',
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (game.trumpTaken)
-                          Tooltip(
-                            message: l('trumpTakenHint'),
-                            child: Container(
-                              key: const ValueKey('fixed-trump-suit'),
-                              width: 36,
-                              height: 54,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(5),
-                                border: Border.all(
-                                  color: const Color(0xff244b43),
+                if (!game.isMongol13 && !game.isDurak && !game.isThousand)
+                  Positioned(
+                    key: const ValueKey('table-stock'),
+                    bottom:
+                        ownBottom +
+                        12 +
+                        32 * scale +
+                        (frameSize.height - 54) / 2,
+                    left:
+                        constraints.maxWidth * (twoLowerSeats ? .5 : .18) - 40,
+                    child: Semantics(
+                      label:
+                          '${l('trump')} ${suitSymbols[game.trumpSuit]}, ${l('stock')}: ${game.stockCount}',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (game.trumpTaken)
+                            Tooltip(
+                              message: l('trumpTakenHint'),
+                              child: Container(
+                                key: const ValueKey('fixed-trump-suit'),
+                                width: 36,
+                                height: 54,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(
+                                    color: const Color(0xff244b43),
+                                  ),
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        l('trump'),
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Color(0xff244b43),
+                                        ),
+                                      ),
+                                      Text(
+                                        suitSymbols[game.trumpSuit],
+                                        style: TextStyle(
+                                          fontSize: 30,
+                                          height: 1.1,
+                                          color:
+                                              game.trumpSuit == 1 ||
+                                                  game.trumpSuit == 2
+                                              ? const Color(0xffc62828)
+                                              : const Color(0xff244b43),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      l('trump'),
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: Color(0xff244b43),
-                                      ),
-                                    ),
-                                    Text(
-                                      suitSymbols[game.trumpSuit],
-                                      style: TextStyle(
-                                        fontSize: 30,
-                                        height: 1.1,
-                                        color:
-                                            game.trumpSuit == 1 ||
-                                                game.trumpSuit == 2
-                                            ? const Color(0xffc62828)
-                                            : const Color(0xff244b43),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          )
-                        else
-                          CardView(game.trumpCard, width: 36),
-                        const SizedBox(width: 8),
-                        motion.deck(width: 36, count: game.stockCount),
-                      ],
+                            )
+                          else
+                            CardView(game.trumpCard, width: 36),
+                          const SizedBox(width: 8),
+                          motion.deck(width: 36, count: game.stockCount),
+                        ],
+                      ),
                     ),
                   ),
-                ),
                 if (game.seats.isNotEmpty)
                   Positioned(
                     key: ValueKey('table-seat-$anchor'),
                     left:
-                        constraints.maxWidth * (twoLowerSeats ? .78 : .5) -
+                        constraints.maxWidth *
+                            (game.seats.length == 6
+                                ? .84
+                                : twoLowerSeats
+                                ? .78
+                                : .5) -
                         seatWidth / 2,
                     bottom: ownBottom,
                     width: seatWidth,
@@ -484,7 +584,13 @@ class _TableViewState extends State<TableView> {
                 Text(
                   game.roomCode == null
                       ? 'Muushig'
-                      : '${l('tableLabel')} ${game.roomCode}',
+                      : '${game.isThousand
+                            ? 'Thousand · '
+                            : (game.isDurak || game.isThousand)
+                            ? 'Durak'
+                            : game.isMongol13
+                            ? 'Mongol 13'
+                            : l('tableLabel')} ${game.roomCode}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -535,7 +641,7 @@ class _TableViewState extends State<TableView> {
     final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
     // Rule: players who passed sit this round out, dimmed, score unchanged.
     return Opacity(
-      opacity: s.decision == Decision.pass ? 0.45 : 1,
+      opacity: s.decision == Decision.pass || s.finished ? 0.45 : 1,
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.topCenter,
@@ -602,7 +708,7 @@ class _TableViewState extends State<TableView> {
                           borderRadius: BorderRadius.circular(3),
                         ),
                         child: Text(
-                          '${s.score}',
+                          '${game.isMongol13 || game.isDurak ? s.handCount : s.score}',
                           style: const TextStyle(
                             color: Color(0xff244b43),
                             fontSize: 12,
@@ -610,7 +716,9 @@ class _TableViewState extends State<TableView> {
                         ),
                       ),
                     ),
-                    if (seat == game.dealer)
+                    if (!game.isMongol13 &&
+                        !game.isDurak &&
+                        seat == game.dealer)
                       const Positioned(
                         left: 10,
                         top: 10,
@@ -644,7 +752,9 @@ class _TableViewState extends State<TableView> {
               SizedBox(
                 height: 14 * scale,
                 child: Text(
-                  s.decision == Decision.pass
+                  s.finished
+                      ? l('durakOut')
+                      : s.decision == Decision.pass
                       ? l('passed')
                       : !s.online && !s.bot
                       ? l('offline')
@@ -695,6 +805,9 @@ class _TableViewState extends State<TableView> {
   }
 
   Widget _center(GameController game, L l, CardTableMotionState motion) {
+    if (game is RemoteGameController && game.isDurak) {
+      return _durakCenter(game, l, motion);
+    }
     // Rule: centre cards are shown smallest to largest, without names.
     final trick = [...game.displayTrick]
       ..sort(
@@ -703,7 +816,21 @@ class _TableViewState extends State<TableView> {
             : a.card - b.card,
       );
     final String status;
-    if (game.completedTrickWinner != null) {
+    if (game is RemoteGameController && game.isThousand) {
+      status = game.thousandStage == 'bid'
+          ? l('thousandBidHint')
+          : game.thousandStage == 'give'
+          ? l('thousandGiveHint')
+          : game.thousandStage == 'contract'
+          ? l('thousandContractHint')
+          : game.humanTurn
+          ? l('yourTurn') + _countdown(game)
+          : l.fmt('thinking', _seatName(game, l, game.turn)) + _countdown(game);
+    } else if (game.isMongol13 && game.humanTurn) {
+      status = game.openingCard != null
+          ? '${l('m13Opening')} ${rankLabel(game.openingCard!)}${suitSymbols[rules.suitOf(game.openingCard!)]}'
+          : l('m13Select') + _countdown(game);
+    } else if (game.completedTrickWinner != null) {
       status = l.fmt(
         'takesTrick',
         _seatName(game, l, game.completedTrickWinner!),
@@ -731,8 +858,42 @@ class _TableViewState extends State<TableView> {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        if (game is RemoteGameController && game.isThousand) ...[
+          Text(
+            '${l('thousandContract')} ${game.thousandStage == 'bid' ? game.thousandBid : game.thousandContract} · ${_seatName(game, l, game.thousandBidder)}',
+            textAlign: TextAlign.center,
+          ),
+          Text(
+            game.trumpSuit < 0
+                ? l('thousandNoTrump')
+                : '${l('trump')} ${suitSymbols[game.trumpSuit]}',
+          ),
+          if (game.thousandStage == 'give' || game.thousandStage == 'contract')
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (final c in game.thousand['kitty'] as List? ?? [])
+                  Padding(
+                    padding: const EdgeInsets.all(3),
+                    child: CardView(rules.parseCard(c as String), width: 36),
+                  ),
+              ],
+            ),
+          if (game.humanSeat >= 0 &&
+              (game.thousand['details'] as List? ?? []).length > game.humanSeat)
+            Text(
+              '${l('thousandPoints')} ${(game.thousand['details'] as List)[game.humanSeat]['points']} + ${(game.thousand['details'] as List)[game.humanSeat]['bonus']}'
+              '${(game.thousand['details'] as List)[game.humanSeat]['barrel'] == true ? ' · ${l('thousandBarrel')} ${(game.thousand['details'] as List)[game.humanSeat]['attempts']}/3' : ''}',
+            ),
+          const SizedBox(height: 8),
+        ],
         SizedBox(
-          height: 96,
+          height:
+              game is RemoteGameController &&
+                  game.isThousand &&
+                  game.thousandStage != 'play'
+              ? 0
+              : 96,
           child: FittedBox(
             fit: BoxFit.scaleDown,
             child: Row(
@@ -755,10 +916,139 @@ class _TableViewState extends State<TableView> {
         const SizedBox(height: 12),
         Flexible(
           child: Text(
-            status,
+            game.isMongol13 && trick.isNotEmpty
+                ? '${l('m13_${m13Combo(trick.map((t) => t.card).toList())?.kind ?? 'single'}')} · $status'
+                : status,
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _durakCenter(
+    RemoteGameController game,
+    L l,
+    CardTableMotionState motion,
+  ) {
+    final pairs = game.displayDurakPairs;
+    if (!game.playPending &&
+        (_durakTarget >= pairs.length ||
+            (pairs.isNotEmpty && pairs[_durakTarget].cover != null))) {
+      _durakTarget = pairs.indexWhere((p) => p.cover == null);
+      if (_durakTarget < 0) _durakTarget = 0;
+    }
+    final stage = game.durakStage;
+    final status = game.humanTurn
+        ? l(
+            stage == 'defend'
+                ? 'durakChooseTarget'
+                : stage == 'add'
+                ? 'durakAddHint'
+                : 'durakAttackHint',
+          )
+        : game.turn >= 0 && game.turn < game.seats.length
+        ? l.fmt('thinking', _seatName(game, l, game.turn))
+        : '';
+    return Column(
+      children: [
+        SizedBox(
+          height: 34,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CardView(game.trumpCard, width: 20),
+              const SizedBox(width: 6),
+              motion.deck(width: 20, count: game.stockCount),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  '${l('trump')} ${suitSymbols[game.trumpSuit]} · ${l('stock')}: ${game.stockCount}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = pairs.isEmpty
+                  ? 40.0
+                  : ((constraints.maxWidth / pairs.length) - 6).clamp(
+                      20.0,
+                      46.0,
+                    );
+              return FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var i = 0; i < pairs.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: GestureDetector(
+                          onTap: pairs[i].cover == null
+                              ? () => setState(() => _durakTarget = i)
+                              : null,
+                          child: Container(
+                            key: ValueKey('durak-pair-$i'),
+                            width: width + 4,
+                            height: width * 1.5 + 28,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color:
+                                    game.humanTurn &&
+                                        stage == 'defend' &&
+                                        i == _durakTarget
+                                    ? Colors.white
+                                    : Colors.transparent,
+                              ),
+                            ),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  child: motion.trickCard(
+                                    pairs[i].attack,
+                                    CardView(pairs[i].attack, width: width),
+                                  ),
+                                ),
+                                if (pairs[i].cover != null)
+                                  Positioned(
+                                    top: 24,
+                                    left: 4,
+                                    child: motion.trickCard(
+                                      pairs[i].cover!,
+                                      CardView(pairs[i].cover!, width: width),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        SizedBox(
+          height: 32,
+          child: Text(
+            '${game.durak['taking'] == true ? '${l('durakTaking')} · ' : ''}$status${_countdown(game)}',
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12),
           ),
         ),
       ],
@@ -789,7 +1079,17 @@ class _TableViewState extends State<TableView> {
   }
 
   Widget _hand(GameController game, CardTableMotionState motion) {
-    final hand = [...game.displayHand]..sort();
+    final hand = [...game.displayHand]
+      ..sort(
+        (a, b) => game.isThousand
+            ? (rules.suitOf(a) != rules.suitOf(b)
+                  ? rules.suitOf(a).compareTo(rules.suitOf(b))
+                  : thousandStrength(a).compareTo(thousandStrength(b)))
+            : game.isMongol13
+            ? m13Value(a).compareTo(m13Value(b))
+            : a.compareTo(b),
+      );
+    _selected.removeWhere((c) => !hand.contains(c));
     final playing = game.phase == Phase.playing && game.humanTurn;
     final exchanging =
         (game.phase == Phase.exchanging || game.phase == Phase.navsh) &&
@@ -799,6 +1099,36 @@ class _TableViewState extends State<TableView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (hand.isEmpty) return const SizedBox.shrink();
+        if (game.isDurak && hand.length > 15) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final c in hand)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 12, 6, 12),
+                    child: motion.handCard(
+                      c,
+                      CardView(
+                        c,
+                        width: 64,
+                        selected: _selected.contains(c),
+                        disabled: game.playPending,
+                        onTap: motion.dealing
+                            ? null
+                            : () => _onCardTap(
+                                game,
+                                c,
+                                playing: playing,
+                                exchanging: exchanging,
+                              ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }
         final width = constraints.maxWidth.clamp(0.0, 80.0);
         final stride = hand.length <= 1
             ? 0.0
@@ -854,6 +1184,32 @@ class _TableViewState extends State<TableView> {
   }) {
     final audio = context.read<AudioController>();
     if (playing) {
+      if (game.isThousand) {
+        setState(() {
+          if (!_selected.remove(card)) {
+            _selected.clear();
+            _selected.add(card);
+          }
+        });
+        return;
+      }
+      if (game is RemoteGameController && game.isDurak) {
+        setState(() {
+          if (!_selected.remove(card)) {
+            if (game.durakStage == 'defend') _selected.clear();
+            if (_selected.length < 6) _selected.add(card);
+          }
+        });
+        return;
+      }
+      if (game.isMongol13) {
+        setState(() {
+          if (!_selected.remove(card) && _selected.length < 5) {
+            _selected.add(card);
+          }
+        });
+        return;
+      }
       audio.playSfx(SfxType.huhsh);
       setState(_selected.clear);
       game.play(rules.cardString(card));
@@ -875,6 +1231,187 @@ class _TableViewState extends State<TableView> {
   Widget _actions(GameController game, L l) {
     if (!game.humanTurn || game.autoPlaying) return const SizedBox.shrink();
     final audio = context.read<AudioController>();
+
+    if (game is RemoteGameController && game.isThousand) {
+      if (game.thousandStage == 'bid' || game.thousandStage == 'contract') {
+        final bidding = game.thousandStage == 'bid';
+        final min = bidding ? game.thousandBid + 5 : game.thousandBid;
+        final max = thousandBidCap(game.hand) < min
+            ? min
+            : thousandBidCap(game.hand);
+        final canBid = !bidding || thousandBidCap(game.hand) >= min;
+        final choice = _thousandChoice.clamp(min, max);
+        return _actionRow([
+          DropdownButton<int>(
+            value: choice,
+            isExpanded: true,
+            items: [
+              for (var n = min; n <= max; n += 5)
+                DropdownMenuItem(value: n, child: Text('$n')),
+            ],
+            onChanged: (v) => setState(() => _thousandChoice = v ?? min),
+          ),
+          if (bidding)
+            _tableButton(
+              danger: true,
+              onPressed: () => game.thousandAction('pass'),
+              child: Text(l('m13Pass')),
+            ),
+          _tableButton(
+            onPressed: canBid
+                ? () => game.thousandAction(
+                    bidding ? 'bid' : 'contract',
+                    value: choice,
+                  )
+                : null,
+            child: Text(l(bidding ? 'thousandBid' : 'thousandConfirm')),
+          ),
+        ]);
+      }
+      if (game.thousandStage == 'give') {
+        final selected = _selected.toList();
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${_seatName(game, l, (game.humanSeat + 1) % 3)} ← ${selected.isNotEmpty ? rules.cardString(selected[0]) : '—'} · ${_seatName(game, l, (game.humanSeat + 2) % 3)} ← ${selected.length > 1 ? rules.cardString(selected[1]) : '—'}',
+              maxLines: 2,
+              textAlign: TextAlign.center,
+            ),
+            _tableButton(
+              onPressed: selected.length == 2
+                  ? () {
+                      game.thousandAction(
+                        'give',
+                        value: selected.map(rules.cardString).toList(),
+                      );
+                      setState(_selected.clear);
+                    }
+                  : null,
+              child: Text(l('thousandGive')),
+            ),
+          ],
+        );
+      }
+      final chosen = _selected.firstOrNull;
+      void play(bool announce) {
+        if (chosen == null) return;
+        game.thousandAction(
+          'play',
+          value: rules.cardString(chosen),
+          announce: announce,
+        );
+        setState(_selected.clear);
+      }
+
+      return _actionRow([
+        _tableButton(
+          onPressed: () => setState(() {
+            final legal = game.legalCards()
+              ..sort(
+                (a, b) => thousandStrength(a).compareTo(thousandStrength(b)),
+              );
+            _selected
+              ..clear()
+              ..add(legal.first);
+          }),
+          child: Text(l('m13Hint')),
+        ),
+        _tableButton(
+          onPressed: chosen != null && game.canAnnounceThousand(chosen)
+              ? () => play(true)
+              : null,
+          child: Text(l('thousandAnnounce')),
+        ),
+        _tableButton(
+          onPressed: chosen != null ? () => play(false) : null,
+          child: Text(l('m13Play')),
+        ),
+      ]);
+    }
+    if (game is RemoteGameController && game.isDurak) {
+      final defending = game.durakStage == 'defend';
+      final canTransfer =
+          defending &&
+          game.durak['transfer'] == true &&
+          game.durakPairs.every((p) => p.cover == null);
+      void send(String action) {
+        game.durakAction(
+          action,
+          cards: _selected.toList(),
+          target: action == 'defend' ? _durakTarget : null,
+        );
+        setState(_selected.clear);
+      }
+
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (canTransfer)
+            TextButton(
+              onPressed: _selected.length == 1 ? () => send('transfer') : null,
+              child: Text(l('durakTransfer')),
+            ),
+          _actionRow([
+            _tableButton(
+              onPressed: () => setState(() {
+                final hint = game.durakSuggestion();
+                _selected
+                  ..clear()
+                  ..addAll(hint.cards);
+                _durakTarget = hint.target ?? _durakTarget;
+              }),
+              child: Text(l('m13Hint')),
+            ),
+            _tableButton(
+              danger: true,
+              onPressed: defending || game.durakStage == 'add'
+                  ? () => game.durakAction(defending ? 'take' : 'finish')
+                  : null,
+              child: Text(l(defending ? 'durakTake' : 'durakFinish')),
+            ),
+            _tableButton(
+              onPressed: _selected.isNotEmpty
+                  ? () => send(defending ? 'defend' : 'attack')
+                  : null,
+              child: Text(l(defending ? 'durakDefend' : 'm13Play')),
+            ),
+          ]),
+        ],
+      );
+    }
+    if (game is RemoteGameController && game.isMongol13) {
+      return _actionRow([
+        _tableButton(
+          onPressed: () => setState(() {
+            _selected
+              ..clear()
+              ..addAll(game.comboHint());
+          }),
+          child: Text(l('m13Hint')),
+        ),
+        _tableButton(
+          onPressed: game.passAllowed
+              ? () {
+                  game.decide(false);
+                  setState(_selected.clear);
+                }
+              : null,
+          danger: true,
+          child: Text(l('m13Pass')),
+        ),
+        _tableButton(
+          onPressed: _selected.isNotEmpty
+              ? () {
+                  audio.playSfx(SfxType.huhsh);
+                  game.playCombo(_selected.toList());
+                  setState(_selected.clear);
+                }
+              : null,
+          child: Text(l('m13Play')),
+        ),
+      ]);
+    }
 
     switch (game.phase) {
       case Phase.deciding:
@@ -1008,7 +1545,9 @@ class _TableViewState extends State<TableView> {
                 SizedBox(
                   width: 80,
                   child: Text(
-                    game.seats[seat].decision == Decision.pass
+                    game.isMongol13 || game.isDurak
+                        ? '${l('m13Remaining')} ${game.seats[seat].handCount}'
+                        : game.seats[seat].decision == Decision.pass
                         ? l('passed')
                         : '${game.seats[seat].tricks} ${l('tricksN')}',
                   ),
@@ -1066,13 +1605,20 @@ class _TableViewState extends State<TableView> {
       children: [
         _overlay([
           Text(
-            humanWon ? l('youWin') : l('gameOver'),
+            game is RemoteGameController && game.drawn
+                ? l('durakDraw')
+                : humanWon
+                ? l('youWin')
+                : l('gameOver'),
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),
-          Text(
-            '${l('winner')}: ${winners.map((s) => _seatName(game, l, s)).join(', ')}',
-          ),
+          if (!(game is RemoteGameController && game.drawn))
+            Text(
+              '${l('winner')}: ${winners.map((s) => _seatName(game, l, s)).join(', ')}',
+            ),
+          if (game is RemoteGameController && game.isMongol13 && game.dragon)
+            Text(l('m13Dragon')),
           if (game is RemoteGameController &&
               game.winnings[game.humanSeat] != null)
             Padding(
@@ -1085,6 +1631,13 @@ class _TableViewState extends State<TableView> {
           const SizedBox(height: 12),
           _scoreTable(game, l),
           const SizedBox(height: 16),
+          if (game is RemoteGameController &&
+              (game.isDurak || game.isThousand) &&
+              game.humanSeat == 0)
+            MyButton(
+              onPressed: game.restarting ? null : game.restartDurak,
+              child: Text(l('nextRound')),
+            ),
           MyButton(onPressed: () => _leave(game), child: Text(l('backToMenu'))),
         ]),
         if (humanWon)

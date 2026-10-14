@@ -37,6 +37,284 @@ const chatPhrases = {
 };
 
 const _table = <String, Map<String, String>>{
+  "thousandFriendHint": {
+    "en": "3 friends · host starts · first to 1000 wins",
+    "mn": "3 найз · эзэн эхлүүлнэ · 1000 оноо",
+    "zh": "三人好友局 · 房主开局 · 先达 1000 分获胜",
+  },
+  "thousandBidHint": {
+    "en": "Bid or pass",
+    "mn": "Оноо зарлах эсвэл өнжих",
+    "zh": "轮流叫分或放弃叫分",
+  },
+  "thousandGiveHint": {
+    "en": "Select two cards in recipient order",
+    "mn": "Хоёр хөзөр сонгоно уу",
+    "zh": "按接收者顺序选择两张牌，各送一张",
+  },
+  "thousandContractHint": {
+    "en": "Confirm or raise your contract",
+    "mn": "Захиалгаа батлах",
+    "zh": "确认最终叫分，可以加叫",
+  },
+  "thousandContract": {"en": "Contract", "mn": "Захиалга", "zh": "叫分"},
+  "thousandNoTrump": {
+    "en": "No trump yet",
+    "mn": "Козырь хараахан байхгүй",
+    "zh": "尚无主牌",
+  },
+  "thousandPoints": {
+    "en": "Card points + marriage",
+    "mn": "Хөзрийн оноо + хос",
+    "zh": "牌点＋报对分",
+  },
+  "thousandBarrel": {"en": "Barrel", "mn": "Торх", "zh": "上桶"},
+  "thousandBid": {"en": "Bid", "mn": "Зарлах", "zh": "叫分"},
+  "thousandConfirm": {"en": "Confirm", "mn": "Батлах", "zh": "确认"},
+  "thousandGive": {"en": "Give cards", "mn": "Хөзөр өгөх", "zh": "分牌"},
+  "thousandAnnounce": {"en": "Declare K+Q", "mn": "K+Q зарлах", "zh": "报对出牌"},
+  "error_thousand_need_players": {
+    "en": "Exactly 3 players required",
+    "mn": "Яг 3 тоглогч шаардлагатай",
+    "zh": "需要三位玩家才能开局",
+  },
+  "error_thousand_bad_bid": {
+    "en": "Invalid bid or contract",
+    "mn": "Захиалгын оноо буруу",
+    "zh": "叫分必须符合下限、5 分步长及报对上限",
+  },
+  "error_thousand_give_two": {
+    "en": "Select exactly two cards",
+    "mn": "Яг хоёр хөзөр сонго",
+    "zh": "请选择两张牌，各给另外一位玩家",
+  },
+  "error_thousand_follow_suit": {
+    "en": "Follow suit, or trump if void",
+    "mn": "Ижил өнгө эсвэл козырь тогло",
+    "zh": "有同花必须跟；缺门有主必须出主牌",
+  },
+  "error_thousand_bad_marriage": {
+    "en": "Win a trick before declaring held K+Q",
+    "mn": "Нэг гараа хожоод K+Q зарлана",
+    "zh": "需先赢过一墩，领出时持同花 K、Q 才能报对",
+  },
+
+  'durakDeck': {'en': 'Deck size', 'mn': 'Хөзрийн тоо', 'zh': '牌组张数'},
+  'durakTransferMode': {
+    'en': 'Transfer mode',
+    'mn': 'Шилжүүлэх горим',
+    'zh': '转移模式',
+  },
+  'durakAllowDraw': {
+    'en': 'Allow final draw',
+    'mn': 'Тэнцэх боломжтой',
+    'zh': '允许末轮平局',
+  },
+  'durakFriendHint': {
+    'en': 'Private friends · host starts · no entry fee',
+    'mn': 'Найзын өрөө · эзэн эхлүүлнэ · төлбөргүй',
+    'zh': '好友私密房 · 房主开局 · 打牌不扣金币',
+  },
+  'durakOut': {'en': 'Finished', 'mn': 'Дууссан', 'zh': '已出完'},
+  'durakDraw': {'en': 'Draw', 'mn': 'Тэнцээ', 'zh': '平局'},
+  'durakChooseTarget': {
+    'en': 'Choose an attack card, then cover it',
+    'mn': 'Довтлох хөзрийг сонгоод дарна уу',
+    'zh': '点击攻击牌选择目标，再选择盖牌',
+  },
+  'durakAddHint': {
+    'en': 'Add matching ranks or finish',
+    'mn': 'Ижил тоо нэмэх эсвэл дуусгах',
+    'zh': '追加桌面已有点数的牌，或结束追加',
+  },
+  'durakAttackHint': {
+    'en': 'Attack with one rank',
+    'mn': 'Ижил тоотой хөзрөөр довтлох',
+    'zh': '选择同点数手牌发起攻击',
+  },
+  'durakTaking': {
+    'en': 'Defender is taking',
+    'mn': 'Хамгаалагч авч байна',
+    'zh': '防守者收牌中',
+  },
+  'durakTransfer': {'en': 'Transfer', 'mn': 'Шилжүүлэх', 'zh': '转移'},
+  'durakTake': {'en': 'Take', 'mn': 'Авах', 'zh': '收牌'},
+  'durakFinish': {'en': 'Done', 'mn': 'Дуусгах', 'zh': '结束追加'},
+  'durakDefend': {'en': 'Cover', 'mn': 'Дарах', 'zh': '盖牌'},
+  'error_durak_bad_cards': {
+    'en': 'Invalid card selection',
+    'mn': 'Хөзрийн сонголт буруу',
+    'zh': '所选手牌无效或重复',
+  },
+  'error_durak_bad_deck': {
+    'en': 'Choose 24, 36 or 52 cards',
+    'mn': '24, 36 эсвэл 52 хөзөр сонгоно уу',
+    'zh': '请选择 24、36 或 52 张牌',
+  },
+  'error_durak_rank': {
+    'en': 'Use ranks already on the table',
+    'mn': 'Ширээн дээрх тоотой хөзөр сонгоно уу',
+    'zh': '首攻须同点数，追加须使用桌面已有点数',
+  },
+  'error_durak_attack_limit': {
+    'en': 'Too many attacking cards',
+    'mn': 'Довтлох хөзөр хэт олон',
+    'zh': '超过本轮攻击张数或防守手牌上限',
+  },
+  'error_durak_target': {
+    'en': 'Choose an uncovered attack card',
+    'mn': 'Дараагүй довтлох хөзрийг сонгоно уу',
+    'zh': '请选择一张尚未盖住的攻击牌',
+  },
+  'error_durak_cannot_beat': {
+    'en': 'Use a higher card of the same suit or a trump',
+    'mn': 'Ижил мастийн том хөзөр эсвэл козырь ашиглана уу',
+    'zh': '需要同花色更大的牌，或符合规则的主牌',
+  },
+  'error_durak_transfer': {
+    'en': 'Transfer is unavailable after covering',
+    'mn': 'Дарсны дараа шилжүүлэх боломжгүй',
+    'zh': '需要同点数转移牌，且开始盖牌后不能转移',
+  },
+  'error_durak_transfer_limit': {
+    'en': 'The next defender cannot take this many attacks',
+    'mn': 'Дараагийн хамгаалагчийн хөзөр хүрэлцэхгүй',
+    'zh': '转移后超过下一位防守者手牌数或攻击上限',
+  },
+  'error_durak_cannot_finish': {
+    'en': 'You must attack or defend',
+    'mn': 'Довтлох эсвэл хамгаалах хэрэгтэй',
+    'zh': '当前需要攻击或防守，不能结束追加',
+  },
+  'm13Opening': {
+    'en': 'First play must include',
+    'mn': 'Эхний нүүдэлд оруулах хөзөр',
+    'zh': '首手必须包含',
+  },
+  'm13Select': {
+    'en': 'Select cards, then Play',
+    'mn': 'Хөзрөө сонгоод гаргана уу',
+    'zh': '选择手牌后点击出牌',
+  },
+  'm13Hint': {'en': 'Hint', 'mn': 'Санал', 'zh': '提示'},
+  'm13Pass': {'en': 'Pass', 'mn': 'Өнжих', 'zh': '过'},
+  'm13Play': {'en': 'Play', 'mn': 'Гаргах', 'zh': '出牌'},
+  'm13Remaining': {'en': 'Cards', 'mn': 'Хөзөр', 'zh': '剩牌'},
+  'm13Start': {'en': 'Start game', 'mn': 'Эхлүүлэх', 'zh': '开始游戏'},
+  'm13FriendHint': {
+    'en': 'Private friend room · 2–4 players · host starts · points only',
+    'mn': 'Найзын өрөө · 2–4 хүн · эзэн эхлүүлнэ · зөвхөн оноо',
+    'zh': '好友私密房 · 2～4 人 · 房主开局 · 仅计积分',
+  },
+  'm13Dragon': {
+    'en': '13 unique ranks — instant win',
+    'mn': '13 өөр хөзөр — шууд ялалт',
+    'zh': '十三张点数各异，直接获胜',
+  },
+  'error_m13_bad_combo': {
+    'en': 'Invalid card combination',
+    'mn': 'Хөзрийн хослол буруу',
+    'zh': '所选手牌不是有效牌型',
+  },
+  'error_m13_opening': {
+    'en': 'Include the opening card',
+    'mn': 'Эхлэх хөзрийг оруулна уу',
+    'zh': '首手需要包含指定的最小牌',
+  },
+  'error_m13_too_small': {
+    'en': 'Play the same number of cards with a higher value',
+    'mn': 'Ижил тооны илүү том хөзөр гаргана уу',
+    'zh': '需要相同张数且更大的牌型',
+  },
+  'error_m13_cannot_pass': {
+    'en': 'You must lead this turn',
+    'mn': 'Энэ ээлжид хөзөр гаргах ёстой',
+    'zh': '当前由你领出，不能过牌',
+  },
+  'error_m13_need_players': {
+    'en': 'At least two players are required',
+    'mn': 'Дор хаяж хоёр тоглогч хэрэгтэй',
+    'zh': '至少两人坐下后才能开局',
+  },
+  'm13_single': {'en': 'Single', 'mn': 'Нэг', 'zh': '单张'},
+  'm13_pair': {'en': 'Pair', 'mn': 'Хос', 'zh': '对子'},
+  'm13_triple': {'en': 'Three of a kind', 'mn': 'Гурвал', 'zh': '三张'},
+  'm13_four': {'en': 'Four of a kind', 'mn': 'Дөрөв', 'zh': '四张'},
+  'm13_straight': {'en': 'Straight', 'mn': 'Дараалал', 'zh': '顺子'},
+  'm13_flush': {'en': 'Flush', 'mn': 'Ижил масть', 'zh': '同花'},
+  'm13_fullHouse': {'en': 'Full house', 'mn': 'Гурвал ба хос', 'zh': '三带二'},
+  'm13_fourOne': {'en': 'Four plus one', 'mn': 'Дөрөв ба нэг', 'zh': '四带一'},
+  'm13_straightFlush': {
+    'en': 'Straight flush',
+    'mn': 'Ижил мастийн дараалал',
+    'zh': '同花顺',
+  },
+  'rtcRate': {
+    'en': 'Table video: 10 coins/min · 1 coin per 6 seconds',
+    'zh': '整桌视频：10 金币/分钟，每 6 秒扣 1 金币',
+    'mn': 'Ширээний дүрс: 10 зоос/мин · 6 секундэд 1 зоос',
+  },
+  'rtcPayer': {'en': 'Paid by', 'zh': '付费人', 'mn': 'Төлөгч'},
+  'rtcBalance': {'en': 'Your coins', 'zh': '你的金币', 'mn': 'Таны зоос'},
+  'rtcCharging': {
+    'en': 'Video billing active',
+    'zh': '视频计费中',
+    'mn': 'Дүрсний төлбөр тооцож байна',
+  },
+  'rtcPaused': {
+    'en': 'Video billing paused',
+    'zh': '视频计费已暂停',
+    'mn': 'Дүрсний төлбөр түр зогссон',
+  },
+  'rtcPayTitle': {
+    'en': 'Enable table video',
+    'zh': '开通本桌视频',
+    'mn': 'Ширээний дүрсийг нээх',
+  },
+  'rtcPayBody': {
+    'en':
+        'You pay 1 coin per 6 seconds for the whole table. Billing starts with video and at least two connected players, and pauses when all cameras are off. Leaving ends your sponsorship.',
+    'zh': '由你为整桌付费，每 6 秒扣 1 金币。至少两人接入且有人开启视频时计费；全部关闭视频则暂停。你离桌后结束付费，不转扣其他玩家。',
+    'mn':
+        'Бүх ширээнд 6 секунд тутам 1 зоос төлнө. Хоёроос дээш хүн холбогдож дүрс асаасан үед тооцно. Камерууд унтарвал түр зогсоно. Та гарвал төлбөр дуусна.',
+  },
+  'rtcPayConfirm': {
+    'en': 'Agree & enable camera',
+    'zh': '同意并开启摄像头',
+    'mn': 'Зөвшөөрч камер асаах',
+  },
+  'rtcSpeakerOn': {'en': 'Sound on', 'zh': '开启收听', 'mn': 'Дуу нээх'},
+  'rtcSpeakerOff': {'en': 'Mute sound', 'zh': '关闭收听', 'mn': 'Дуу хаах'},
+  'error_rtc_insufficient': {
+    'en': 'Not enough coins. Video stopped; voice and game continue.',
+    'zh': '金币不足，视频已停止，语音和打牌不受影响。',
+    'mn': 'Зоос хүрэлцэхгүй. Дүрс зогссон; дуу, тоглолт үргэлжилнэ.',
+  },
+  'error_rtc_billing_failed': {
+    'en': 'Video billing unavailable. Your game continues.',
+    'zh': '视频扣费暂不可用，视频已停止，牌局继续。',
+    'mn': 'Дүрсний төлбөр боломжгүй. Тоглолт үргэлжилнэ.',
+  },
+  'error_rtc_payment_required': {
+    'en': 'Accept the table video price first.',
+    'zh': '请先确认开通本桌视频及价格。',
+    'mn': 'Эхлээд дүрсний үнийг зөвшөөрнө үү.',
+  },
+  'error_rtc_payer_left': {
+    'en': 'The payer left. A new payer must enable video.',
+    'zh': '付费人已离桌，重新开启视频需由新付费人确认。',
+    'mn': 'Төлөгч гарсан. Шинэ төлөгч дүрсийг нээнэ үү.',
+  },
+  'error_rtc_payer_offline': {
+    'en': 'The payer disconnected. Video is paused.',
+    'zh': '付费人连接中断，视频已暂停。',
+    'mn': 'Төлөгчийн холболт тасарсан. Дүрс түр зогссон.',
+  },
+  'error_rtc_closed': {
+    'en': 'Table call ended.',
+    'zh': '本桌通话已结束。',
+    'mn': 'Ширээний яриа дууссан.',
+  },
   'rtcTitle': {
     'en': "Table voice & video",
     'mn': "Ширээний дуу, дүрс",
@@ -44,9 +322,9 @@ const _table = <String, Map<String, String>>{
   },
   'rtcPrivacy': {
     'en':
-        "Join to listen. Microphone and camera stay off until you enable them.",
+        "When someone starts voice or video, seated players automatically receive. Your microphone and camera stay off until you enable them.",
     'mn': "Сонсохоор нэгдэнэ. Микрофон, камерыг өөрөө асаана.",
-    'zh': "加入后先收听，麦克风和摄像头由你主动开启。",
+    'zh': "有人开启音视频后，同桌自动接收。你的麦克风和摄像头由你主动开启。",
   },
   'rtcAndroidOnly': {
     'en': "Voice & video is available in the Android app.",

@@ -27,6 +27,11 @@ class _Client extends NetClient {
   final events = StreamController<Map<String, dynamic>>.broadcast();
   final requests = <Map<String, dynamic>>[];
   Future<Map<String, dynamic>> Function()? reply;
+  Map<String, dynamic> rtc = {
+    'enabled': false,
+    'payer_uid': 0,
+    'video_epoch': 0,
+  };
   @override
   Stream<Map<String, dynamic>> get pushes => events.stream;
   @override
@@ -35,7 +40,18 @@ class _Client extends NetClient {
     Map<String, dynamic>? args,
   ]) async {
     requests.add({'cmd': cmd, ...?args});
-    return reply == null ? token() : reply!();
+    if (reply != null) return reply!();
+    if (cmd == 'rtc_control') {
+      if (args?['action'] == 'start') rtc['enabled'] = true;
+      if (args?['action'] == 'prepare') {
+        if (rtc['payer_uid'] == 0 && args?['consent'] != true) {
+          throw NetException('rtc_payment_required');
+        }
+        rtc['payer_uid'] = 42;
+      }
+      return {'rtc': Map.of(rtc)};
+    }
+    return token();
   }
 }
 
@@ -89,6 +105,10 @@ class _Transport extends CallTransport {
 
   @override
   Future<void> switchCamera() async {}
+  @override
+  Future<void> muteAll(bool muted) async {
+    actions.add('speaker:$muted');
+  }
 }
 
 void main() {
@@ -132,8 +152,8 @@ void main() {
     );
   });
   tearDown(() async {
-    await call.leave();
     call.dispose();
+    await call.leave();
     game.dispose();
     await session.client.events.close();
   });
@@ -179,7 +199,7 @@ void main() {
       await call.toggleDevice(camera: false);
       expect(call.microphoneOn, isTrue);
       expect(call.cameraOn, isFalse);
-      await call.toggleDevice(camera: true);
+      await call.toggleDevice(camera: true, consent: true);
       await call.toggleDevice(camera: false);
       expect(call.microphoneOn, isFalse);
       expect(call.cameraOn, isTrue);
@@ -257,14 +277,14 @@ void main() {
       );
       await tester.tap(find.byType(IconButton));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Join audio'));
+      await tester.tap(find.text('Unmute'));
       await tester.pumpAndSettle();
       expect(
         find.text('Table calls are not available yet. You can keep playing.'),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
-      expect(transport.actions, isEmpty);
+      expect(transport.actions.where((a) => a.startsWith('join:')), isEmpty);
       await call.leave();
       await tester.pumpWidget(const SizedBox());
     },
@@ -304,4 +324,90 @@ void main() {
       expect(call.reconnecting, isFalse);
     },
   );
+
+  test('first microphone enables table without payment', () async {
+    await call.toggleDevice(camera: false);
+    expect(call.connected, isTrue);
+    expect(call.microphoneOn, isTrue);
+    expect(game.rtcEnabled, isTrue);
+    expect(
+      session.client.requests.any((r) => r['action'] == 'prepare'),
+      isFalse,
+    );
+  });
+
+  test('room activation auto joins without permissions or capture', () async {
+    session.client.rtc['enabled'] = true;
+    game.updateRtc(Map.of(session.client.rtc));
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(call.connected, isTrue);
+    expect(transport.actions, ['join:42']);
+    expect(call.cameraOn, isFalse);
+    expect(call.microphoneOn, isFalse);
+    expect(
+      session.client.requests.any((r) => r['action'] == 'prepare'),
+      isFalse,
+    );
+  });
+
+  test('spectators never auto join', () async {
+    game.humanSeat = -1;
+    game.updateRtc({'enabled': true});
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(transport.actions, isEmpty);
+    expect(session.client.requests, isEmpty);
+  });
+
+  test('video requires consent before publication', () async {
+    await call.toggleDevice(camera: true);
+    expect(call.cameraOn, isFalse);
+    expect(call.error, 'rtc_payment_required');
+    await call.toggleDevice(camera: true, consent: true);
+    expect(call.cameraOn, isTrue);
+    expect(game.rtcPayer, 42);
+    expect(session.client.requests.last['camera'], isTrue);
+  });
+
+  test(
+    'billing stop disables camera but preserves microphone and call',
+    () async {
+      await call.toggleDevice(camera: false);
+      await call.toggleDevice(camera: true, consent: true);
+      session.client.rtc.addAll({
+        'video_epoch': 1,
+        'blocked': 'rtc_insufficient',
+      });
+      game.updateRtc(Map.of(session.client.rtc));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(call.cameraOn, isFalse);
+      expect(call.microphoneOn, isTrue);
+      expect(call.connected, isTrue);
+      expect(transport.actions.last, 'camera:false');
+    },
+  );
+
+  test('foreground reconnects receive only after background', () async {
+    await call.toggleDevice(camera: true, consent: true);
+    call.didChangeAppLifecycleState(AppLifecycleState.paused);
+    await call.leave();
+    expect(call.connected, isFalse);
+    call.didChangeAppLifecycleState(AppLifecycleState.resumed);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(call.connected, isTrue);
+    expect(call.cameraOn, isFalse);
+    expect(call.microphoneOn, isFalse);
+  });
+
+  test('foreign room signal ignored; coin push updates balance', () async {
+    session.client.events.add({
+      'push': 'rtc_state',
+      'code': '999999',
+      'rtc': {'enabled': true},
+    });
+    session.client.events.add({'push': 'rtc_balance', 'coins': 12});
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(game.rtcEnabled, isFalse);
+    expect(session.user!.coins, 12);
+    expect(call.connected, isFalse);
+  });
 }

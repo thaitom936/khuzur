@@ -1,0 +1,70 @@
+{
+  "hands": [
+    [
+      "AC",
+      "KC",
+      "QC",
+      "JC",
+      "TC"
+    ],
+    [
+      "AH",
+      "KH",
+      "QH",
+      "JH",
+      "TH"
+    ],
+    [
+      "QD",
+      "JD",
+      "TD",
+      "9D",
+      "8D"
+    ]
+  ],
+  "trump": "7H",
+  "config": {
+    "dealerTakesTrump": false
+  },
+  "steps": [
+    {
+      "decide": {
+        "seat": 1,
+        "play": false
+      }
+    },
+    {
+      "decide": {
+        "seat": 2,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "expect": {
+        "phase": "playing",
+        "turn": 2
+      }
+    },
+    {
+      "legal": {
+        "seat": 2,
+        "cards": [
+          "QD",
+          "JD",
+          "TD",
+          "9D",
+          "8D"
+        ]
+      }
+    }
+  ],
+  "name": "rules v2: passed_ace_ignored",
+  "players": 3,
+  "dealer": 0
+}

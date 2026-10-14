@@ -61,7 +61,10 @@ class CardTableMotionState extends State<CardTableMotion>
       // and old plays are displayed immediately when entering/reconnecting.
       if (!_reduceMotion &&
           _seen!.kind == TableMotionKind.deal &&
-          widget.game.phase == Phase.deciding) {
+          (widget.game.phase == Phase.deciding ||
+              widget.game.isMongol13 ||
+              widget.game.isDurak ||
+              widget.game.isThousand)) {
         _deal();
       }
     }
@@ -101,7 +104,9 @@ class CardTableMotionState extends State<CardTableMotion>
       } else if (event.kind == TableMotionKind.collect) {
         _collect(event.seat!);
       } else {
-        _play(event.card!, returning: event.kind == TableMotionKind.returnCard);
+        for (final card in event.cards ?? [event.card!]) {
+          _play(card, returning: event.kind == TableMotionKind.returnCard);
+        }
       }
     });
   }
@@ -147,13 +152,28 @@ class CardTableMotionState extends State<CardTableMotion>
     final human = game.humanSeat;
     _hiddenHand.addAll(hand);
     _afterLayout(() {
-      final from = _rect(_deck);
+      final from =
+          _rect(_deck) ??
+          (game.isMongol13 || game.isDurak || game.isThousand
+              ? _rect(_root)?.deflate(100)
+              : null);
       if (from == null || seatCount == 0) {
         _hiddenHand.clear();
         return;
       }
       // Five rounds, clockwise from the dealer. Only our own cards are revealed.
-      for (var n = 0; n < 5; n++) {
+      for (
+        var n = 0;
+        n <
+            (game.isThousand
+                ? 7
+                : game.isMongol13
+                ? 13
+                : game.isDurak
+                ? 6
+                : 5);
+        n++
+      ) {
         for (var offset = 1; offset <= seatCount; offset++) {
           final seat = (dealer + offset) % seatCount;
           final card = seat == human && n < hand.length ? hand[n] : null;

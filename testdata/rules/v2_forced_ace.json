@@ -1,0 +1,87 @@
+{
+  "hands": [
+    [
+      "AC",
+      "KC",
+      "QC",
+      "JC",
+      "TC"
+    ],
+    [
+      "9C",
+      "8C",
+      "AD",
+      "KD",
+      "QD"
+    ]
+  ],
+  "trump": "7C",
+  "config": {
+    "decidePhase": false,
+    "dealerTakesTrump": false
+  },
+  "steps": [
+    {
+      "expect": {
+        "phase": "playing",
+        "turn": 0
+      }
+    },
+    {
+      "legal": {
+        "seat": 0,
+        "cards": [
+          "AC"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "KC"
+      },
+      "error": "illegal_card"
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "AC"
+      }
+    },
+    {
+      "legal": {
+        "seat": 1,
+        "cards": [
+          "8C",
+          "9C"
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "8C"
+      }
+    },
+    {
+      "expect": {
+        "turn": 0,
+        "trickNo": 2
+      }
+    },
+    {
+      "legal": {
+        "seat": 0,
+        "cards": [
+          "KC",
+          "QC",
+          "JC",
+          "TC"
+        ]
+      }
+    }
+  ],
+  "name": "rules v2: forced_ace",
+  "players": 2,
+  "dealer": 0
+}

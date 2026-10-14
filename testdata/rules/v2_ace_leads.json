@@ -1,0 +1,35 @@
+{
+  "hands": [
+    [
+      "AC",
+      "KC",
+      "QC",
+      "JC",
+      "TC"
+    ],
+    [
+      "9C",
+      "8C",
+      "7C",
+      "AD",
+      "KD"
+    ]
+  ],
+  "trump": "8S",
+  "stock": [],
+  "config": {
+    "decidePhase": false,
+    "dealerTakesTrump": false
+  },
+  "steps": [
+    {
+      "expect": {
+        "phase": "playing",
+        "turn": 1
+      }
+    }
+  ],
+  "name": "rules v2: ace_leads",
+  "players": 2,
+  "dealer": 0
+}

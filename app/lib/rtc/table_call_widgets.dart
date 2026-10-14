@@ -82,20 +82,32 @@ class _CallPanel extends StatelessWidget {
                   ),
                 ),
               const SizedBox(height: 12),
-              if (!call.connected)
-                FilledButton.icon(
-                  onPressed: !disabled && call.available ? call.join : null,
-                  icon: const Icon(Icons.headphones),
-                  label: Text(l('rtcJoin')),
-                )
-              else ...[
+              Text(l('rtcRate'), textAlign: TextAlign.center),
+              if (call.game.rtcPayer != 0)
+                Text(
+                  '${l('rtcPayer')}: ${call.game.seats.where((s) => s.rtcUid == call.game.rtcPayer).map((s) => s.name).firstOrNull ?? call.game.rtcPayer}',
+                ),
+              if (call.game.rtcPayer == call.session.user?.uid)
+                Text('${l('rtcBalance')}: ${call.session.user?.coins ?? 0}'),
+              if (call.game.rtcEnabled)
+                Text(
+                  l(
+                    call.game.rtc['charging'] == true
+                        ? 'rtcCharging'
+                        : 'rtcPaused',
+                  ),
+                ),
+              if ((call.game.rtc['blocked'] as String? ?? '').isNotEmpty)
+                Text(l.error(call.game.rtc['blocked'] as String)),
+              const SizedBox(height: 12),
+              ...[
                 Wrap(
                   spacing: 12,
                   runSpacing: 8,
                   alignment: WrapAlignment.center,
                   children: [
                     FilledButton.tonalIcon(
-                      onPressed: disabled
+                      onPressed: disabled || !call.available
                           ? null
                           : () => call.toggleDevice(camera: false),
                       icon: Icon(call.microphoneOn ? Icons.mic : Icons.mic_off),
@@ -104,9 +116,9 @@ class _CallPanel extends StatelessWidget {
                       ),
                     ),
                     FilledButton.tonalIcon(
-                      onPressed: disabled
+                      onPressed: disabled || !call.available
                           ? null
-                          : () => call.toggleDevice(camera: true),
+                          : () => _toggleCamera(context, call),
                       icon: Icon(
                         call.cameraOn ? Icons.videocam : Icons.videocam_off,
                       ),
@@ -146,11 +158,16 @@ class _CallPanel extends StatelessWidget {
                         ),
                       ),
                     ),
-                TextButton.icon(
-                  onPressed: call.leave,
-                  icon: const Icon(Icons.call_end),
-                  label: Text(l('rtcLeave')),
-                ),
+                if (call.connected)
+                  TextButton.icon(
+                    onPressed: disabled ? null : call.toggleSpeaker,
+                    icon: Icon(
+                      call.speakerMuted ? Icons.volume_off : Icons.volume_up,
+                    ),
+                    label: Text(
+                      l(call.speakerMuted ? 'rtcSpeakerOn' : 'rtcSpeakerOff'),
+                    ),
+                  ),
               ],
             ],
           ),
@@ -158,6 +175,37 @@ class _CallPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _toggleCamera(
+  BuildContext context,
+  TableCallController call,
+) async {
+  var consent = false;
+  if (!call.cameraOn && call.game.rtcPayer == 0) {
+    final l = L.of(context);
+    consent =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(l('rtcPayTitle')),
+            content: Text(l('rtcPayBody')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(l('cancel')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(l('rtcPayConfirm')),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!consent) return;
+  }
+  await call.toggleDevice(camera: true, consent: consent);
 }
 
 /// Compact in call controls, portrait-shaped at the table. Both use the same

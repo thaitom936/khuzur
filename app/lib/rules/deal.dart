@@ -11,6 +11,7 @@ GameState deal({
   required int numPlayers,
   required int dealer,
   required List<int> scores,
+  List<int>? passStreaks,
   RuleConfig config = const RuleConfig(),
   Random? random,
 }) {
@@ -32,5 +33,6 @@ GameState deal({
     dealer: dealer,
     config: config,
     scores: scores,
+    passStreaks: passStreaks,
   );
 }

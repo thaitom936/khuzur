@@ -15,16 +15,19 @@ Directory _caseDir() {
     final dir = Directory(path);
     if (dir.existsSync()) return dir;
   }
-  throw StateError('testdata/rules not found; run tests from the app directory');
+  throw StateError(
+    'testdata/rules not found; run tests from the app directory',
+  );
 }
 
 void main() {
-  final files = _caseDir()
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.json'))
-      .toList()
-    ..sort((a, b) => a.path.compareTo(b.path));
+  final files =
+      _caseDir()
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.json'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
   if (files.isEmpty) throw StateError('no case files in testdata/rules');
 
   for (final file in files) {
@@ -33,23 +36,26 @@ void main() {
   }
 }
 
-List<String> _strings(dynamic list) =>
-    (list as List).cast<String>();
+List<String> _strings(dynamic list) => (list as List).cast<String>();
 
 /// Sorts card strings by card value, matching the engine's output order.
 List<String> _sortedCards(List<String> cards) =>
     [...cards]..sort((a, b) => parseCard(a).compareTo(parseCard(b)));
 
 void _runCase(Map<String, dynamic> c) {
-  final state = GameState.newRound(
-    hands: [for (final h in c['hands'] as List) _strings(h)],
-    trump: c['trump'] as String,
-    stock: _strings(c['stock'] ?? []),
-    dealer: c['dealer'] as int,
-    config: RuleConfig.fromJson(
-        (c['config'] as Map<String, dynamic>?) ?? const {}),
-    scores: (c['scores'] as List?)?.cast<int>(),
-  );
+  GameState makeRound({List<int>? scores, List<int>? passStreaks}) =>
+      GameState.newRound(
+        hands: [for (final h in c['hands'] as List) _strings(h)],
+        trump: c['trump'] as String,
+        stock: _strings(c['stock'] ?? []),
+        dealer: c['dealer'] as int,
+        config: RuleConfig.fromJson(
+          (c['config'] as Map<String, dynamic>?) ?? const {},
+        ),
+        scores: scores ?? (c['scores'] as List?)?.cast<int>(),
+        passStreaks: passStreaks ?? (c['passStreaks'] as List?)?.cast<int>(),
+      );
+  var state = makeRound();
 
   var stepNo = 0;
   for (final stepAny in c['steps'] as List) {
@@ -57,12 +63,22 @@ void _runCase(Map<String, dynamic> c) {
     final step = stepAny as Map<String, dynamic>;
     final where = 'step $stepNo';
 
-    if (step.containsKey('expect')) {
+    if (step.containsKey('nextRound')) {
+      expect(state.phase, Phase.roundEnd);
+      state = makeRound(
+        scores: [for (final p in state.players) p.score],
+        passStreaks: [for (final p in state.players) p.passStreak],
+      );
+    } else if (step.containsKey('expect')) {
       _checkExpect(state, step['expect'] as Map<String, dynamic>, where);
     } else if (step.containsKey('legal')) {
       final legal = step['legal'] as Map<String, dynamic>;
       final got = state.legalCards(legal['seat'] as int).map(cardString);
-      expect(got, _sortedCards(_strings(legal['cards'])), reason: '$where legal');
+      expect(
+        got,
+        _sortedCards(_strings(legal['cards'])),
+        reason: '$where legal',
+      );
     } else {
       String? err;
       if (step.containsKey('decide')) {
@@ -97,6 +113,13 @@ const _phaseNames = {
 };
 
 void _checkExpect(GameState state, Map<String, dynamic> exp, String where) {
+  if (exp.containsKey('passStreaks')) {
+    expect(
+      [for (final p in state.players) p.passStreak],
+      exp['passStreaks'],
+      reason: '$where passStreaks',
+    );
+  }
   if (exp.containsKey('phase')) {
     expect(_phaseNames[state.phase], exp['phase'], reason: '$where phase');
   }
@@ -110,20 +133,27 @@ void _checkExpect(GameState state, Map<String, dynamic> exp, String where) {
     expect(cardString(state.trumpCard), exp['trump'], reason: '$where trump');
   }
   if (exp.containsKey('tricks')) {
-    expect([for (final p in state.players) p.tricks], exp['tricks'],
-        reason: '$where tricks');
+    expect(
+      [for (final p in state.players) p.tricks],
+      exp['tricks'],
+      reason: '$where tricks',
+    );
   }
   if (exp.containsKey('scores')) {
-    expect([for (final p in state.players) p.score], exp['scores'],
-        reason: '$where scores');
+    expect(
+      [for (final p in state.players) p.score],
+      exp['scores'],
+      reason: '$where scores',
+    );
   }
   if (exp.containsKey('winners')) {
     expect(state.winners, exp['winners'], reason: '$where winners');
   }
   if (exp.containsKey('hand')) {
     final hand = exp['hand'] as Map<String, dynamic>;
-    final got =
-        ([...state.players[hand['seat'] as int].hand]..sort()).map(cardString);
+    final got = ([
+      ...state.players[hand['seat'] as int].hand,
+    ]..sort()).map(cardString);
     expect(got, _sortedCards(_strings(hand['cards'])), reason: '$where hand');
   }
 }

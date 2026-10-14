@@ -132,7 +132,7 @@ end
 
 --- Creates a room. players: list of {uid, name, agent, fd} (quick match
 --- passes the full table incl. bots; friend rooms start with the creator).
-function CMD.create_room(mode, size, players, stake, locked, botNames)
+function CMD.create_room(mode, size, players, stake, locked, botNames, gameType, gameOptions)
   local room = skynet.newservice("room")
   -- Every room gets a code so the lobby list can address it.
   local code = newCode()
@@ -152,6 +152,8 @@ function CMD.create_room(mode, size, players, stake, locked, botNames)
     locked = locked or false,
     players = players,
     bot_names = botNames,
+    game_type = gameType or "muushig",
+    game_options = gameOptions,
   })
   return room, code
 end

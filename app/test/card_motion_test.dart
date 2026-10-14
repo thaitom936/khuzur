@@ -10,6 +10,7 @@ import 'package:card/play_session/card_widget.dart';
 import 'package:card/play_session/play_session_screen.dart';
 import 'package:card/play_session/table_motion.dart';
 import 'package:card/play_session/turn_countdown_avatar.dart';
+import 'package:card/rules/card.dart' as cards;
 import 'package:card/rules/rules.dart';
 import 'package:card/settings/persistence/memory_settings_persistence.dart';
 import 'package:card/settings/settings.dart';
@@ -114,6 +115,430 @@ Future<void> _mount(
 }
 
 void main() {
+  test(
+    'Thousand optimistic play returns on rejection and state restores variable trump',
+    () async {
+      final session = _Session();
+      final game = _gameFor(session)
+        ..gameType = 'thousand'
+        ..trumpSuit = -1;
+      addTearDown(game.dispose);
+      addTearDown(session.client.events.close);
+      final request = game.thousandAction('play', value: '9C');
+      expect(game.displayHand, isNot(contains(9)));
+      expect(game.displayTrick.last.card, 9);
+      expect(game.playPending, isTrue);
+      session.client.requests.single.completeError(
+        NetException('thousand_follow_suit'),
+      );
+      await request;
+      expect(game.displayHand, contains(9));
+      expect(game.playPending, isFalse);
+      await _push(session, {
+        'push': 'snapshot',
+        'game_type': 'thousand',
+        'started': true,
+        'size': 3,
+        'you': 0,
+        'phase': 'playing',
+        'turn': 0,
+        'trump_suit': -1,
+        'hand': ['KH', 'QH'],
+        'seats': [
+          {'name': 'A', 'score': 880, 'tricks': 1},
+          {'name': 'B'},
+          {'name': 'C'},
+        ],
+        'thousand': {
+          'stage': 'play',
+          'contract': 140,
+          'bidder': 0,
+          'details': [
+            {'points': 30, 'bonus': 0, 'barrel': true, 'attempts': 1},
+          ],
+        },
+      });
+      expect(game.trumpSuit, -1);
+      expect(game.thousandContract, 140);
+      expect(game.canAnnounceThousand(cards.parseCard('KH')), isTrue);
+      await _push(session, {
+        'push': 'thousand_state',
+        'you': 0,
+        'size': 3,
+        'seats': [
+          {'name': 'A', 'tricks': 1},
+          {'name': 'B'},
+          {'name': 'C'},
+        ],
+        'phase': 'playing',
+        'turn': 1,
+        'trump': 'KH',
+        'trump_suit': 2,
+        'hand': ['QH'],
+        'trick': [
+          {'seat': 0, 'card': 'KH'},
+        ],
+        'thousand': {'stage': 'play', 'contract': 140, 'bidder': 0},
+      });
+      expect(game.trumpSuit, 2);
+      expect(game.hand, [cards.parseCard('QH')]);
+      expect(game.trick.single.card, cards.parseCard('KH'));
+    },
+  );
+  for (final stage in ['bid', 'give', 'contract', 'play']) {
+    testWidgets('Thousand $stage controls fit phone with large text', (
+      tester,
+    ) async {
+      final session = _Session();
+      final game = _gameFor(session)
+        ..gameType = 'thousand'
+        ..numPlayers = 3
+        ..trumpSuit = -1
+        ..phase = (stage == 'bid'
+            ? Phase.deciding
+            : stage == 'play'
+            ? Phase.playing
+            : Phase.exchanging)
+        ..hand = [
+          '9C',
+          'JC',
+          'QC',
+          'KC',
+          'TC',
+          'AC',
+          'KH',
+          'QH',
+        ].map(cards.parseCard).toList()
+        ..thousand = {
+          'stage': stage,
+          'bid': 100,
+          'contract': 100,
+          'bidder': 0,
+          'kitty': ['9H', 'AH', 'AS'],
+          'details': [
+            {'points': 30, 'bonus': 0, 'barrel': true, 'attempts': 1},
+          ],
+        }
+        ..seats = List.generate(
+          3,
+          (i) => SeatView(
+            name: 'Player $i',
+            score: 0,
+            tricks: 1,
+            decision: Decision.play,
+            handCount: 8,
+          ),
+        );
+      addTearDown(game.dispose);
+      addTearDown(session.client.events.close);
+      await _mount(
+        tester,
+        session,
+        game,
+        size: const Size(360, 800),
+        scale: 1.5,
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.text('Thousand · ${game.roomCode ?? ''}'), findsNothing);
+      if (stage == 'give') expect(find.text('Give cards'), findsOneWidget);
+      if (stage == 'play') expect(find.text('Declare K+Q'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  test(
+    'Durak rematch blocks duplicate requests and recovers from failure',
+    () async {
+      final session = _Session();
+      final game = _gameFor(session)
+        ..gameType = 'durak'
+        ..gameOver = true;
+      addTearDown(game.dispose);
+      addTearDown(session.client.events.close);
+      final request = game.restartDurak();
+      await game.restartDurak();
+      expect(session.client.requests.length, 1);
+      expect(game.restarting, isTrue);
+      session.client.requests.last.completeError(NetException('timeout'));
+      await request;
+      expect(game.restarting, isFalse);
+      expect(game.playError, 'timeout');
+    },
+  );
+  testWidgets(
+    'Durak renders six video seats and paired attack/cover cards in a narrow viewport',
+    (tester) async {
+      final session = _Session();
+      final game = _gameFor(session)
+        ..gameType = 'durak'
+        ..numPlayers = 6
+        ..hand = [6, 7, 8, 9, 10, 11]
+        ..durak = {
+          'stage': 'defend',
+          'attacker': 1,
+          'defender': 0,
+          'pairs': [
+            {'attack': '6D', 'attack_seat': 1},
+          ],
+          'limit': 5,
+          'transfer': true,
+        }
+        ..seats = List.generate(
+          6,
+          (i) => SeatView(
+            name: 'Player $i',
+            score: 0,
+            tricks: 0,
+            handCount: 6,
+            decision: Decision.play,
+          ),
+        );
+      addTearDown(game.dispose);
+      addTearDown(session.client.events.close);
+      await _mount(tester, session, game, size: const Size(355, 486));
+      expect(tester.takeException(), isNull);
+      for (var i = 0; i < 6; i++) {
+        expect(find.byKey(ValueKey('table-seat-$i')), findsOneWidget);
+      }
+      expect(find.byKey(const ValueKey('durak-pair-0')), findsOneWidget);
+      final req = game.durakAction('defend', cards: [7], target: 0);
+      expect(game.displayHand, isNot(contains(7)));
+      expect(game.displayDurakPairs.first.cover, 7);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(flights, findsOneWidget);
+      session.client.requests.last.completeError(
+        NetException('durak_cannot_beat'),
+      );
+      await req;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(game.hand, contains(7));
+      expect(game.displayDurakPairs.first.cover, isNull);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  test(
+    'Durak reconnect restores pairs and draw result; a state push commits optimistic attack once',
+    () async {
+      final session = _Session();
+      final game = _gameFor(session)
+        ..gameType = 'durak'
+        ..hand = [7, 8, 9];
+      addTearDown(game.dispose);
+      addTearDown(session.client.events.close);
+      final req = game.durakAction('attack', cards: [7]);
+      expect(game.displayDurakPairs.length, 1);
+      await _push(session, {
+        'push': 'durak_state',
+        'game_type': 'durak',
+        'you': 0,
+        'size': 2,
+        'phase': 'playing',
+        'turn': 1,
+        'seats': [],
+        'hand': ['8C', '9C'],
+        'stock': 12,
+        'action_seat': 0,
+        'cards': ['7C'],
+        'durak': {
+          'stage': 'defend',
+          'pairs': [
+            {'attack': '7C', 'attack_seat': 0},
+          ],
+        },
+      });
+      session.client.requests.last.complete({});
+      await req;
+      expect(game.displayDurakPairs.length, 1);
+      expect(game.hand, [8, 9]);
+      expect(game.playPending, isFalse);
+      await _push(session, {
+        'push': 'snapshot',
+        'game_type': 'durak',
+        'you': 0,
+        'size': 2,
+        'started': true,
+        'phase': 'game_end',
+        'draw': true,
+        'winners': [],
+        'durak': {
+          'stage': 'add',
+          'pairs': [
+            {'attack': '7C', 'attack_seat': 0, 'cover': '8C', 'cover_seat': 1},
+          ],
+        },
+      });
+      expect(game.drawn, isTrue);
+      expect(game.gameOver, isTrue);
+      expect(game.displayDurakPairs.first.cover, 8);
+    },
+  );
+  testWidgets(
+    'Mongol 13 seated guests wait for host without exposing table actions',
+    (tester) async {
+      final session = _Session();
+      final game = _gameFor(session)
+        ..gameType = 'mongol13'
+        ..started = false
+        ..humanSeat = 1
+        ..roomCode = '131313';
+      addTearDown(game.dispose);
+      addTearDown(session.client.events.close);
+      await _mount(tester, session, game, size: const Size(355, 486));
+      expect(find.byKey(const ValueKey('table-actions')), findsNothing);
+      expect(find.text('Start game'), findsNothing);
+      expect(find.text('Waiting for friends…'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets(
+    'Mongol 13 has 13 selectable cards, combo hint and batch rollback',
+    (tester) async {
+      final session = _Session();
+      final game = _gameFor(session)
+        ..gameType = 'mongol13'
+        ..hand = [
+          '3D',
+          '4C',
+          '5H',
+          '6S',
+          '7D',
+          '8S',
+          '9D',
+          'TD',
+          'JS',
+          'QS',
+          'KH',
+          'AD',
+          '3C',
+        ].map(cards.parseCard).toList();
+      addTearDown(game.dispose);
+      addTearDown(session.client.events.close);
+      await _mount(tester, session, game, size: const Size(390, 844));
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey('table-stock')), findsNothing);
+      expect(find.byType(CardView), findsNWidgets(13));
+      await tester.ensureVisible(find.text('Hint'));
+      await tester.tap(find.text('Hint'));
+      await tester.pump();
+      expect(
+        tester
+            .widgetList<CardView>(find.byType(CardView))
+            .where((c) => c.selected)
+            .length,
+        5,
+      );
+      await tester.tap(find.text('Play'));
+      expect(game.displayHand.length, 8);
+      expect(game.displayTrick.length, 5);
+      expect(game.playPending, isTrue);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(flights, findsNWidgets(5));
+      session.client.requests.last.completeError(NetException('m13_too_small'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(game.displayHand.length, 13);
+      expect(game.playPending, isFalse);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  test(
+    'Mongol 13 ack commits once and reconnect restores a combination',
+    () async {
+      final session = _Session();
+      final game = _gameFor(session)
+        ..gameType = 'mongol13'
+        ..hand = [3, 19, 4];
+      addTearDown(game.dispose);
+      addTearDown(session.client.events.close);
+      final request = game.playCombo([3, 19]);
+      expect(game.displayHand, [4]);
+      await _push(session, {
+        'push': 'm13_state',
+        'game_type': 'mongol13',
+        'you': 0,
+        'size': 2,
+        'phase': 'playing',
+        'turn': 1,
+        'seats': [],
+        'hand': ['4C'],
+        'action_seat': 0,
+        'cards': ['3C', '3D'],
+        'm13': {
+          'last': ['3C', '3D'],
+          'last_seat': 0,
+        },
+      });
+      session.client.requests.last.complete({});
+      await request;
+      expect(game.hand, [4]);
+      expect(game.displayTrick.length, 2);
+      expect(game.playPending, isFalse);
+      await _push(session, {
+        'push': 'snapshot',
+        'game_type': 'mongol13',
+        'you': 0,
+        'size': 2,
+        'started': true,
+        'phase': 'playing',
+        'turn': 0,
+        'hand': ['4C'],
+        'm13': {
+          'last': ['3C', '3D'],
+          'last_seat': 1,
+        },
+        'can_pass': true,
+      });
+      expect(game.displayTrick.length, 2);
+      expect(game.passAllowed, isTrue);
+      await _push(session, {
+        'push': 'm13_state',
+        'game_type': 'mongol13',
+        'you': -1,
+        'size': 2,
+        'phase': 'playing',
+        'turn': 0,
+        'm13': {'last': []},
+      });
+      expect(game.spectating, isTrue);
+      expect(game.hand, isEmpty);
+    },
+  );
+  test(
+    'new rules force trump ace and preserve pass restriction on reconnect',
+    () async {
+      final session = _Session();
+      final game = _gameFor(session);
+      addTearDown(game.dispose);
+      addTearDown(session.client.events.close);
+      await _push(session, {
+        'push': 'snapshot',
+        'you': 0,
+        'size': 2,
+        'started': true,
+        'phase': 'playing',
+        'turn': 0,
+        'trump': '7C',
+        'hand': ['AC', 'KC', 'QC', 'JC', 'TC'],
+        'config': {'rulesVersion': 2},
+        'can_pass': false,
+      });
+      expect(game.legalCards(), [14]);
+      expect(game.passAllowed, isFalse);
+      await _push(session, {
+        'push': 'turn',
+        'seat': 0,
+        'phase': 'deciding',
+        'can_pass': false,
+      });
+      expect(game.passAllowed, isFalse);
+    },
+  );
   late _Session session;
   late RemoteGameController game;
   setUp(() {

@@ -1,0 +1,58 @@
+{
+  "hands": [
+    [
+      "AC",
+      "KC",
+      "QC",
+      "JC",
+      "TC"
+    ],
+    [
+      "9C",
+      "8C",
+      "7C",
+      "AD",
+      "KD"
+    ]
+  ],
+  "trump": "7H",
+  "config": {
+    "dealerTakesTrump": false
+  },
+  "steps": [
+    {
+      "decide": {
+        "seat": 1,
+        "play": false
+      },
+      "error": "must_play_min_players"
+    },
+    {
+      "decide": {
+        "seat": 1,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": false
+      },
+      "error": "must_play_min_players"
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "expect": {
+        "phase": "playing"
+      }
+    }
+  ],
+  "name": "rules v2: two_players_must_play",
+  "players": 2,
+  "dealer": 0
+}

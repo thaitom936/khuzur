@@ -8,7 +8,8 @@
     "mustOvertrump": true,
     "noTrickPenalty": 5,
     "mustTrump": false,
-    "dealerTakesTrump": false
+    "dealerTakesTrump": false,
+    "rulesVersion": 1
   },
   "hands": [
     [

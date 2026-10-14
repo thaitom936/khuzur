@@ -12,12 +12,20 @@ local red
 local mem = { users = {}, by_device = {}, friends = {}, next_uid = 1 }
 
 local CMD = {}
+local serialize = require "skynet.queue"()
 
 local function quote(s)
   return "'" .. tostring(s):gsub("[\\']", "\\%0") .. "'"
 end
 
 local SCHEMA = {
+  [[CREATE TABLE IF NOT EXISTS rtc_charge (
+      charge_key VARCHAR(96) CHARACTER SET ascii PRIMARY KEY,
+      uid INT UNSIGNED NOT NULL,
+      coins INT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX (uid, created_at)
+    ) ENGINE=InnoDB]],
   [[CREATE TABLE IF NOT EXISTS user (
       uid INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       name VARCHAR(32) NOT NULL,
@@ -230,6 +238,7 @@ end
 function CMD.coins_get(uid)
   if not mysql then return mem.users[uid] and mem.users[uid].coins or 0 end
   local rows = mysql:query(("SELECT coins FROM user WHERE uid = %d"):format(uid))
+  if rows.err then error(rows.err) end
   return rows[1] and rows[1].coins or 0
 end
 
@@ -247,6 +256,41 @@ function CMD.coins_add(uid, delta)
     " WHERE uid = %d AND coins + %d >= 0"):format(delta, uid, delta))
   if (r.affected_rows or 0) == 0 then return nil, "insufficient" end
   return CMD.coins_get(uid)
+end
+
+-- Fail closed without durable MySQL; each six-second debit has a unique key.
+function CMD.rtc_charge(uid, key)
+  if not mysql then return nil, "rtc_billing_failed" end
+  if type(uid) ~= "number" or uid < 1 or uid % 1 ~= 0
+      or type(key) ~= "string" or #key > 96
+      or not key:match("^kh_%x+:%d+$") then return nil, "bad_request" end
+  local function query(sql)
+    local r=mysql:query(sql)
+    if r.err then error(r.err) end
+    return r
+  end
+  local ok,balance,err=pcall(function()
+    query("START TRANSACTION")
+    local inserted=query(("INSERT IGNORE INTO rtc_charge (charge_key,uid,coins) VALUES (%s,%d,1)")
+      :format(quote(key),uid))
+    if inserted.affected_rows==0 then
+      local old=query("SELECT uid FROM rtc_charge WHERE charge_key="..quote(key))
+      if not old[1] or old[1].uid~=uid then error("charge identity mismatch") end
+      query("COMMIT")
+      return CMD.coins_get(uid)
+    end
+    local changed=query(("UPDATE user SET coins=coins-1 WHERE uid=%d AND coins>=1"):format(uid))
+    if changed.affected_rows~=1 then query("ROLLBACK"); return nil,"insufficient" end
+    local coins=CMD.coins_get(uid)
+    query("COMMIT")
+    return coins
+  end)
+  if not ok then
+    pcall(function() mysql:query("ROLLBACK") end)
+    skynet.error("[rtc] wallet transaction failed")
+    return nil,"rtc_billing_failed"
+  end
+  return balance,err
 end
 
 ---------------------------------------------------------------- friends
@@ -543,7 +587,7 @@ skynet.start(function()
   end
 
   skynet.dispatch("lua", function(_, _, cmd, ...)
-    skynet.retpack(CMD[cmd](...))
+    skynet.retpack(serialize(CMD[cmd], ...))
   end)
   skynet.register ".db"
 end)

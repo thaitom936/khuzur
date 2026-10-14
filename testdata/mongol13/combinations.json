@@ -1,0 +1,23 @@
+[
+ {"cards":["3D"],"kind":"single","other":["3C"],"beats":false},
+ {"cards":["3S"],"kind":"single","other":["3H"],"beats":true},
+ {"cards":["2D"],"kind":"single","other":["AS"],"beats":true},
+ {"cards":["4D","4S"],"kind":"pair","other":["4C","4H"],"beats":true},
+ {"cards":["4D","5S"],"kind":null},
+ {"cards":["4D","4D"],"kind":null},
+ {"cards":["2D","2C","2H"],"kind":"triple","other":["AD","AC","AS"],"beats":true},
+ {"cards":["7D","7C","7H","7S"],"kind":"four","other":["AS"],"beats":false},
+ {"cards":["AD","2C","3H","4S","5D"],"kind":"straight","other":["2D","3C","4H","5S","6D"],"beats":false},
+ {"cards":["TD","JC","QH","KS","AD"],"kind":"straight","other":["9D","TC","JH","QS","KD"],"beats":true},
+ {"cards":["JD","QC","KH","AS","2D"],"kind":null},
+ {"cards":["QD","KC","AH","2S","3D"],"kind":null},
+ {"cards":["3D","4D","5D","6D","7D"],"kind":"straightFlush","other":["2D","2C","2H","2S","AD"],"beats":true},
+ {"cards":["3D","3C","3H","3S","4D"],"kind":"fourOne","other":["AD","AC","AH","2S","2D"],"beats":true},
+ {"cards":["3D","3C","3H","4S","4D"],"kind":"fullHouse","other":["2S","AS","JS","9S","5S"],"beats":true},
+ {"cards":["3D","5D","7D","9D","JD"],"kind":"flush","other":["TD","JC","QH","KS","AD"],"beats":true},
+ {"cards":["2D","4D","6D","8D","TD"],"kind":"flush","other":["AS","JS","9S","7S","5S"],"beats":true},
+ {"cards":["3S","5S","7S","9S","JS"],"kind":"flush","other":["3H","5H","7H","9H","JH"],"beats":true},
+ {"cards":["3D","4C","5H","6S","7D"],"kind":"straight","other":["3C","4D","5S","6H","7S"],"beats":false},
+ {"cards":["3D","4D","5D","6D","7D"],"kind":"straightFlush","other":["3D","4C","5H","6S","7D"],"beats":true},
+ {"cards":["3D","4C","5H","6S","7D","8C"],"kind":null}
+]

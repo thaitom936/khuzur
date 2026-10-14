@@ -54,10 +54,12 @@ class ReplayController extends GameController {
       trump: r['trump'] as String,
       stock: (r['stock'] as List? ?? []).cast<String>(),
       dealer: r['dealer'] as int,
-      config: RuleConfig.fromJson(
-        (record['config'] as Map?)?.cast<String, dynamic>() ?? const {},
-      ),
+      config: RuleConfig.fromJson({
+        'rulesVersion': 1,
+        ...(record['config'] as Map?)?.cast<String, dynamic>() ?? const {},
+      }),
       scores: (r['scores'] as List).cast<int>(),
+      passStreaks: (r['pass_streaks'] as List?)?.cast<int>(),
     );
     actionIdx = 0;
     completedTrick = null;

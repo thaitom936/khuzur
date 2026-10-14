@@ -33,6 +33,7 @@ local function rankOf(c) return c % 16 end
 
 function M.defaultConfig()
   return {
+    rulesVersion = 2,
     startScore = 15,
     noTrickPenalty = 5,
     decidePhase = true,    -- deal, then each player opts in or passes
@@ -89,6 +90,7 @@ function M.newRound(args)
       decision = "none",
       tricks = 0,
       exchanged = false,
+      passStreak = args.passStreaks and args.passStreaks[seat] or 0,
     }
   end
   for _, s in ipairs(args.stock or {}) do
@@ -102,8 +104,9 @@ function M.newRound(args)
     -- Everyone plays; skip straight to exchanging (or playing).
     for _, p in ipairs(state.players) do
       p.decision = "play"
+      p.passStreak = 0
     end
-    if config.exchangePhase then
+    if config.exchangePhase and (config.rulesVersion < 2 or #state.stock > 0) then
       state.phase = "exchanging"
       -- turn is already the seat left of the dealer.
     else
@@ -136,6 +139,16 @@ function M.startPlaying(state)
     s = s % state.numPlayers + 1
   end
   state.turn = s
+  if state.config.rulesVersion >= 2 then
+    local ace = state.trumpSuit * 16 + 14
+    for seat, p in ipairs(state.players) do
+      if p.decision == "play" then
+        for _, c in ipairs(p.hand) do
+          if c == ace then state.turn = seat; return end
+        end
+      end
+    end
+  end
 end
 
 --- Shuffles the 32-card deck and creates a round: 5 cards each, one
@@ -175,6 +188,7 @@ function M.deal(args)
     stock = stock,
     config = args.config,
     scores = args.scores,
+    passStreaks = args.passStreaks,
   }
 end
 
@@ -211,8 +225,11 @@ function M.decide(state, seat, play)
   local p = state.players[seat]
 
   if not play then
-    if p.score <= state.config.mustPlayAtScore then
+    if state.config.rulesVersion < 2 and p.score <= state.config.mustPlayAtScore then
       return nil, "must_play_low_score"
+    end
+    if state.config.rulesVersion >= 2 and p.passStreak >= 3 then
+      return nil, "must_play_pass_streak"
     end
     local undecidedAfter = -1 -- exclude current player
     for _, q in ipairs(state.players) do
@@ -223,12 +240,15 @@ function M.decide(state, seat, play)
     end
   end
   p.decision = play and "play" or "pass"
+  p.passStreak = play and 0 or p.passStreak + 1
 
   local nxt = findSeat(state, nextSeat(state, seat), function(q) return q.decision == "none" end)
   if nxt then
     state.turn = nxt
   elseif playCount(state) == 0 then
     state.phase = "round_end" -- everyone passed (only possible when minPlayers == 0)
+  elseif state.config.rulesVersion >= 2 and (not state.config.exchangePhase or #state.stock == 0) then
+    M.enterNavshOrPlay(state)
   else
     state.phase = "exchanging"
     state.turn = findSeat(state, state.dealer % state.numPlayers + 1,
@@ -299,7 +319,7 @@ function M.exchange(state, seat, cards)
 
   local nxt = findSeat(state, nextSeat(state, seat),
     function(q) return q.decision == "play" and not q.exchanged end)
-  if nxt then
+  if nxt and (state.config.rulesVersion < 2 or #state.stock > 0) then
     state.turn = nxt
   else
     M.enterNavshOrPlay(state)
@@ -326,6 +346,12 @@ function M.legalCards(state, seat)
 
   if #state.trick == 0 then
     result = hand
+    if cfg.rulesVersion >= 2 and #hand == 5 then
+      local ace = state.trumpSuit * 16 + 14
+      for _, c in ipairs(hand) do
+        if c == ace then result = {ace}; break end
+      end
+    end
   else
     local lead = suitOf(state.trick[1].card)
     local topTrump = trickTrump(state)

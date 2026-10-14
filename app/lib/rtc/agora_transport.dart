@@ -29,9 +29,11 @@ abstract class CallTransport {
   Future<void> microphone(bool enabled);
   Future<void> camera(bool enabled);
   Future<void> mutePeer(int uid, bool muted);
+  Future<void> muteAll(bool muted);
   Future<void> switchCamera();
   Future<void> renew(String token);
   Future<void> close();
+  void cancelPending() {}
 }
 
 class AgoraTransport extends CallTransport {
@@ -39,6 +41,7 @@ class AgoraTransport extends CallTransport {
   RtcEngineEventHandler? _handler;
   bool _microphone = false, _camera = false;
   Future<void>? _closing;
+  Completer<void>? _videoPublished;
 
   @override
   Future<void> connect(CallGrant grant) async {
@@ -72,6 +75,13 @@ class AgoraTransport extends CallTransport {
         }
       },
       onUserOffline: (_, uid, _) => onVideo?.call(uid, false),
+      onVideoPublishStateChanged: (_, _, _, state, _) {
+        if (state == StreamPublishState.pubStatePublished &&
+            _videoPublished != null &&
+            !_videoPublished!.isCompleted) {
+          _videoPublished!.complete();
+        }
+      },
       onRemoteVideoStateChanged: (_, uid, state, _, _) => onVideo?.call(
         uid,
         state == RemoteVideoState.remoteVideoStateDecoding,
@@ -163,14 +173,26 @@ class AgoraTransport extends CallTransport {
 
   @override
   Future<void> camera(bool enabled) async {
-    await engine!.enableLocalVideo(enabled);
-    _camera = enabled;
-    await _publish();
+    final published = enabled ? Completer<void>() : null;
+    _videoPublished = published;
+    try {
+      await engine!.enableLocalVideo(enabled);
+      _camera = enabled;
+      await _publish();
+      if (published != null) {
+        await published.future.timeout(const Duration(seconds: 10));
+      }
+    } finally {
+      if (identical(_videoPublished, published)) _videoPublished = null;
+    }
   }
 
   @override
   Future<void> mutePeer(int uid, bool muted) =>
       engine!.muteRemoteAudioStream(uid: uid, mute: muted);
+  @override
+  Future<void> muteAll(bool muted) => engine!.muteAllRemoteAudioStreams(muted);
+
   @override
   Future<void> switchCamera() => engine!.switchCamera();
   @override
@@ -178,6 +200,12 @@ class AgoraTransport extends CallTransport {
 
   @override
   Future<void> close() => _closing ??= _close();
+
+  @override
+  void cancelPending() {
+    final pending = _videoPublished;
+    if (pending != null && !pending.isCompleted) pending.complete();
+  }
 
   Future<void> _close() async {
     final rtc = engine;

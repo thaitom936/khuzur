@@ -1,6 +1,7 @@
 -- No network or database: run with skynet/3rd/lua/lua test/test_rtc_grant.lua.
 package.path = './lualib/?.lua;' .. package.path
 local dispatch, result
+package.preload['skynet.queue'] = function() return function() return function(fn, ...) return fn(...) end end end
 package.preload['skynet'] = function()
   local s = {}
   function s.start(fn) fn() end

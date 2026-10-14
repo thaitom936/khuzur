@@ -98,6 +98,15 @@ HANDLERS.rtc_token = authed(function(fd, c, msg)
   return data
 end)
 
+HANDLERS.rtc_control = authed(function(fd, c, msg)
+  local room = roomOf(c.uid)
+  if not room then return nil, "rtc_not_seated" end
+  local state, err = skynet.call(room, "lua", "rtc_control", c.uid,
+    skynet.self(), fd, msg.code, msg.action, msg)
+  if not state then return nil, err end
+  return { rtc = state }
+end)
+
 HANDLERS.set_name = authed(function(fd, c, msg)
   local name = tostring(msg.name or "")
   if #name < 1 or #name > 24 then return nil, "bad_name" end
@@ -164,13 +173,25 @@ end)
 HANDLERS.create_room = authed(function(fd, c, msg)
   if roomOf(c.uid) then return nil, "already_in_room" end
   local size = tonumber(msg.size) or 4
-  if size < 2 or size > 5 then return nil, "bad_size" end
+  local gameType = msg.game_type or "muushig"
+  if gameType ~= "muushig" and gameType ~= "mongol13" and gameType ~= "durak" and gameType ~= "thousand" then return nil, "bad_game_type" end
+  if gameType == "thousand" and size ~= 3 then return nil,"thousand_need_players" end
+  local options
+  if gameType == "durak" then
+    local deck = tonumber(msg.deck_size) or 36
+    if deck ~= 24 and deck ~= 36 and deck ~= 52 then return nil, "durak_bad_deck" end
+    if (msg.transfer ~= nil and type(msg.transfer) ~= "boolean") or (msg.allow_draw ~= nil and type(msg.allow_draw) ~= "boolean") then return nil, "bad_request" end
+    if size * 6 > deck then return nil, "bad_size" end
+    options = { deckSize=deck, transfer=msg.transfer == true, allowDraw=msg.allow_draw ~= false }
+  end
+  if size % 1 ~= 0 or size < 2 or size > (gameType == "durak" and 6 or gameType == "mongol13" and 4 or 5) then return nil, "bad_size" end
   local stake = tonumber(msg.stake) or 0
+  if gameType ~= "muushig" and stake ~= 0 then return nil, "bad_stake" end
   if not stakeAllowed(stake) then return nil, "bad_stake" end
   local ok, err = escrow(c.uid, stake)
   if not ok then return nil, err end
   local _, roomCode = skynet.call(".hub", "lua", "create_room", "friend",
-    size, { playerEntry(fd, c) }, stake, msg.locked and true or false)
+    size, { playerEntry(fd, c) }, stake, gameType ~= "muushig" or (msg.locked and true or false), nil, gameType, options)
   return { code = roomCode }
 end)
 
@@ -342,7 +363,7 @@ end)
 
 local ROOM_CMDS = {
   decide = true, exchange = true, take_trump = true, skip_navsh = true,
-  play_card = true,
+  play_card = true, durak_action = true, thousand_action = true,
   auto = true, chat = true,
 }
 

@@ -2,6 +2,8 @@
 
 蒙古纸牌游戏 Muushig。客户端 Flutter（`app/`，竖屏），服务端 Skynet（`server/`）。
 
+新服务器采用原生 MySQL 和 Redis 安装；部署、Agora 配置、开机启动及域名和 Web 发布步骤见 [新服务器部署](DEPLOY.md)。
+
 ## 目录
 
 ```

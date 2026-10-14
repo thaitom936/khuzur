@@ -284,5 +284,8 @@
         ]
       }
     }
-  ]
+  ],
+  "config": {
+    "rulesVersion": 1
+  }
 }

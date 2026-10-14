@@ -204,11 +204,23 @@ class _OnlineScreenState extends State<OnlineScreen> {
     _setLobbyState(_LobbyState.lobby);
   });
 
-  void _createRoom(int size, int stake, bool locked) => _run(() async {
+  void _createRoom(
+    int size,
+    int stake,
+    bool locked, [
+    String gameType = 'muushig',
+    int deckSize = 36,
+    bool transfer = false,
+    bool allowDraw = true,
+  ]) => _run(() async {
     await context.read<Session>().client.call('create_room', {
       'size': size,
       'stake': stake,
       'locked': locked,
+      'game_type': gameType,
+      if (gameType == 'durak') 'deck_size': deckSize,
+      if (gameType == 'durak') 'transfer': transfer,
+      if (gameType == 'durak') 'allow_draw': allowDraw,
     });
     _setLobbyState(_LobbyState.waitingRoom);
   });
@@ -218,6 +230,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
   void _leaveRoom() => _run(() async {
     final session = context.read<Session>();
     await session.client.call('leave_room');
+    _game!.reset();
     await session.refreshCoins();
     _setLobbyState(_LobbyState.lobby);
   });
@@ -644,6 +657,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
             '${game.roomCode ?? '…'}',
             style: Theme.of(context).textTheme.headlineMedium,
           ),
+          if (game.isMongol13) const Text('Mongol 13'),
+          if (game.isDurak) const Text('Durak'),
           if (game.stake > 0) Text('${l('stake')}: ${game.stake}'),
           const SizedBox(height: 12),
           for (final s in game.seats) Text(s.name),
@@ -656,7 +671,14 @@ class _OnlineScreenState extends State<OnlineScreen> {
             child: Text(l('inviteFriends')),
           ),
           const SizedBox(height: 12),
-          MyButton(onPressed: _startRoom, child: Text(l('startNow'))),
+          if (!(game.isMongol13 || game.isDurak) ||
+              (game.humanSeat == 0 && game.seats.length >= 2))
+            MyButton(
+              onPressed: _startRoom,
+              child: Text(
+                l(game.isMongol13 || game.isDurak ? 'm13Start' : 'startNow'),
+              ),
+            ),
           const SizedBox(height: 12),
           MyButton(onPressed: _leaveRoom, child: Text(l('cancel'))),
         ],
@@ -753,39 +775,113 @@ class _OnlineScreenState extends State<OnlineScreen> {
 
   void _sizeDialog(L l) {
     var locked = false;
+    var gameType = 'muushig';
+    var deckSize = 36;
+    var transfer = false;
+    var allowDraw = true;
     showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialog) => AlertDialog(
           title: Text(l('players')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  for (var n = 2; n <= 5; n++)
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        // Coin tables are off for now: stake is always 0.
-                        _createRoom(n, 0, locked);
-                      },
-                      child: Text('$n'),
-                    ),
-                ],
-              ),
-              SwitchListTile(
-                dense: true,
-                title: Text(l('lockedRoom')),
-                subtitle: Text(
-                  l('lockedHint'),
-                  style: const TextStyle(fontSize: 11),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final entry in {
+                      'muushig': 'Muushig',
+                      'mongol13': 'Mongol 13',
+                      'durak': 'Durak',
+                      'thousand': 'Thousand (1000)',
+                    }.entries)
+                      ChoiceChip(
+                        label: Text(entry.value),
+                        selected: gameType == entry.key,
+                        onSelected: (_) =>
+                            setDialog(() => gameType = entry.key),
+                      ),
+                  ],
                 ),
-                value: locked,
-                onChanged: (v) => setDialog(() => locked = v),
-              ),
-            ],
+                const SizedBox(height: 12),
+                if (gameType == 'durak') ...[
+                  DropdownButtonFormField<int>(
+                    initialValue: deckSize,
+                    decoration: InputDecoration(labelText: l('durakDeck')),
+                    items: [
+                      for (final n in [24, 36, 52])
+                        DropdownMenuItem(value: n, child: Text('$n')),
+                    ],
+                    onChanged: (n) => setDialog(() => deckSize = n ?? 36),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    title: Text(l('durakTransferMode')),
+                    value: transfer,
+                    onChanged: (v) => setDialog(() => transfer = v),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    title: Text(l('durakAllowDraw')),
+                    value: allowDraw,
+                    onChanged: (v) => setDialog(() => allowDraw = v),
+                  ),
+                ],
+                Wrap(
+                  alignment: WrapAlignment.spaceEvenly,
+                  children: [
+                    for (
+                      var n = gameType == 'thousand' ? 3 : 2;
+                      n <=
+                          (gameType == 'thousand'
+                              ? 3
+                              : gameType == 'durak'
+                              ? (deckSize == 24 ? 4 : 6)
+                              : gameType == 'mongol13'
+                              ? 4
+                              : 5);
+                      n++
+                    )
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // Coin tables are off for now: stake is always 0.
+                          _createRoom(
+                            n,
+                            0,
+                            gameType != 'muushig' || locked,
+                            gameType,
+                            deckSize,
+                            transfer,
+                            allowDraw,
+                          );
+                        },
+                        child: Text('$n'),
+                      ),
+                  ],
+                ),
+                if (gameType == 'thousand')
+                  Text(l('thousandFriendHint'))
+                else if (gameType == 'durak')
+                  Text(l('durakFriendHint'))
+                else if (gameType == 'mongol13')
+                  Text(l('m13FriendHint'))
+                else
+                  SwitchListTile(
+                    dense: true,
+                    title: Text(l('lockedRoom')),
+                    subtitle: Text(
+                      l('lockedHint'),
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    value: locked,
+                    onChanged: (v) => setDialog(() => locked = v),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

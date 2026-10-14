@@ -1,0 +1,62 @@
+{
+  "hands": [
+    [
+      "AC",
+      "KC",
+      "QC",
+      "JC",
+      "TC"
+    ],
+    [
+      "9C",
+      "8C",
+      "7C",
+      "AD",
+      "KD"
+    ]
+  ],
+  "trump": "AH",
+  "stock": [],
+  "steps": [
+    {
+      "decide": {
+        "seat": 1,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "expect": {
+        "phase": "navsh"
+      }
+    },
+    {
+      "take": {
+        "seat": 0,
+        "card": "TC"
+      }
+    },
+    {
+      "expect": {
+        "phase": "playing",
+        "turn": 0
+      }
+    },
+    {
+      "legal": {
+        "seat": 0,
+        "cards": [
+          "AH"
+        ]
+      }
+    }
+  ],
+  "name": "rules v2: dealer_takes_ace",
+  "players": 2,
+  "dealer": 0
+}

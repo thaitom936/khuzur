@@ -1,0 +1,10 @@
+[
+ {"attack":"9C","cover":"JC","trump":2,"beats":true},
+ {"attack":"9C","cover":"8C","trump":2,"beats":false},
+ {"attack":"AC","cover":"6H","trump":2,"beats":true},
+ {"attack":"9H","cover":"AC","trump":2,"beats":false},
+ {"attack":"9H","cover":"TH","trump":2,"beats":true},
+ {"attack":"9H","cover":"9S","trump":2,"beats":false},
+ {"attack":"9C","cover":"9C","trump":2,"beats":false},
+ {"attack":"2D","cover":"3D","trump":0,"beats":true}
+]

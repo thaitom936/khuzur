@@ -1,0 +1,380 @@
+{
+  "hands": [
+    [
+      "AC",
+      "KC",
+      "QC",
+      "JC",
+      "TC"
+    ],
+    [
+      "9C",
+      "8C",
+      "7C",
+      "AD",
+      "KD"
+    ],
+    [
+      "QD",
+      "JD",
+      "TD",
+      "9D",
+      "8D"
+    ]
+  ],
+  "trump": "7H",
+  "scores": [
+    40,
+    1,
+    40
+  ],
+  "config": {
+    "dealerTakesTrump": false
+  },
+  "steps": [
+    {
+      "decide": {
+        "seat": 1,
+        "play": false
+      }
+    },
+    {
+      "decide": {
+        "seat": 2,
+        "play": false
+      },
+      "error": "must_play_min_players"
+    },
+    {
+      "decide": {
+        "seat": 2,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "QD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "TC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "JD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "JC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "TD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "QC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "9D"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "KC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "8D"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "AC"
+      }
+    },
+    {
+      "expect": {
+        "phase": "round_end",
+        "passStreaks": [
+          0,
+          1,
+          0
+        ],
+        "scores": [
+          45,
+          1,
+          35
+        ]
+      }
+    },
+    {
+      "nextRound": true
+    },
+    {
+      "decide": {
+        "seat": 1,
+        "play": false
+      }
+    },
+    {
+      "decide": {
+        "seat": 2,
+        "play": false
+      },
+      "error": "must_play_min_players"
+    },
+    {
+      "decide": {
+        "seat": 2,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "QD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "TC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "JD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "JC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "TD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "QC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "9D"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "KC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "8D"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "AC"
+      }
+    },
+    {
+      "expect": {
+        "phase": "round_end",
+        "passStreaks": [
+          0,
+          2,
+          0
+        ],
+        "scores": [
+          50,
+          1,
+          30
+        ]
+      }
+    },
+    {
+      "nextRound": true
+    },
+    {
+      "decide": {
+        "seat": 1,
+        "play": false
+      }
+    },
+    {
+      "decide": {
+        "seat": 2,
+        "play": false
+      },
+      "error": "must_play_min_players"
+    },
+    {
+      "decide": {
+        "seat": 2,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "QD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "TC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "JD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "JC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "TD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "QC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "9D"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "KC"
+      }
+    },
+    {
+      "play": {
+        "seat": 2,
+        "card": "8D"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "AC"
+      }
+    },
+    {
+      "expect": {
+        "phase": "round_end",
+        "passStreaks": [
+          0,
+          3,
+          0
+        ],
+        "scores": [
+          55,
+          1,
+          25
+        ]
+      }
+    },
+    {
+      "nextRound": true
+    },
+    {
+      "decide": {
+        "seat": 1,
+        "play": false
+      },
+      "error": "must_play_pass_streak"
+    },
+    {
+      "expect": {
+        "passStreaks": [
+          0,
+          3,
+          0
+        ],
+        "turn": 1
+      }
+    },
+    {
+      "decide": {
+        "seat": 1,
+        "play": true
+      }
+    },
+    {
+      "expect": {
+        "passStreaks": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "name": "rules v2: pass_streak_across_rounds",
+  "players": 3,
+  "dealer": 0
+}

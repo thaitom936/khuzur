@@ -101,13 +101,14 @@ class LocalGameController extends GameController {
     _runBots();
   }
 
-  void _deal(List<int> scores) {
+  void _deal(List<int> scores, [List<int>? passStreaks]) {
     _wonCards.clear();
     _botDeadline = null;
     state = deal(
       numPlayers: numPlayers,
       dealer: dealer,
       scores: scores,
+      passStreaks: passStreaks,
       config: config,
       random: _rng,
     );
@@ -127,7 +128,11 @@ class LocalGameController extends GameController {
   /// the UI can disable the button instead of showing an error).
   @override
   bool get passAllowed {
-    if (state.players[humanSeat].score <= config.mustPlayAtScore) return false;
+    final player = state.players[humanSeat];
+    if (config.rulesVersion < 2 && player.score <= config.mustPlayAtScore) {
+      return false;
+    }
+    if (config.rulesVersion >= 2 && player.passStreak >= 3) return false;
     final undecidedAfter =
         state.players.where((p) => p.decision == Decision.none).length - 1;
     final playCount = state.players
@@ -193,7 +198,10 @@ class LocalGameController extends GameController {
     assert(state.phase == Phase.roundEnd);
     dealer = (dealer + 1) % numPlayers;
     roundNo++;
-    _deal([for (final p in state.players) p.score]);
+    _deal(
+      [for (final p in state.players) p.score],
+      [for (final p in state.players) p.passStreak],
+    );
     completedTrick = null;
     completedTrickWinner = null;
     notifyListeners();

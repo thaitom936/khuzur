@@ -17,6 +17,8 @@ class SeatView {
   final bool auto;
   final bool bot;
   final int? rtcUid;
+  final int handCount;
+  final bool finished;
 
   const SeatView({
     required this.name,
@@ -28,10 +30,17 @@ class SeatView {
     this.auto = false,
     this.bot = false,
     this.rtcUid,
+    this.handCount = 0,
+    this.finished = false,
   });
 }
 
 abstract class GameController extends ChangeNotifier {
+  bool get isMongol13 => false;
+  bool get isDurak => false;
+  bool get isThousand => false;
+  int? get openingCard => null;
+
   /// Presentation events are separate from authoritative rule state. A snapshot
   /// resets motion; ordinary turn/score notifications never replay animations.
   TableMotionEvent? tableMotion;
@@ -104,11 +113,12 @@ abstract class GameController extends ChangeNotifier {
 enum TableMotionKind { deal, play, returnCard, collect, reset }
 
 class TableMotionEvent {
+  final List<TrickCard>? cards;
   final TableMotionKind kind;
   final TrickCard? card;
 
   /// For [TableMotionKind.collect]: the seat the trick flies to.
   final int? seat;
 
-  TableMotionEvent(this.kind, [this.card, this.seat]);
+  TableMotionEvent(this.kind, [this.card, this.seat, this.cards]);
 }

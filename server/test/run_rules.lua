@@ -60,6 +60,11 @@ local function handStrings(state, seat)
 end
 
 local function checkExpect(state, exp, name, stepNo)
+  if exp.passStreaks then
+    local got = {}
+    for i,p in ipairs(state.players) do got[i] = p.passStreak end
+    if not listEq(got, exp.passStreaks) then fail(name, stepNo, "pass streak mismatch") end
+  end
   if exp.phase and state.phase ~= exp.phase then
     fail(name, stepNo, "phase " .. state.phase .. " ~= " .. exp.phase)
   end
@@ -110,18 +115,27 @@ end
 local function runCase(case)
   cases = cases + 1
   local name = case.name
-  local state = engine.newRound {
+  local function makeRound(scores, passStreaks)
+    return engine.newRound {
     players = case.players,
     dealer = case.dealer + 1,
     hands = case.hands,
     trump = case.trump,
     stock = case.stock,
     config = case.config,
-    scores = case.scores,
-  }
+    scores = scores or case.scores,
+    passStreaks = passStreaks or case.passStreaks,
+    }
+  end
+  local state = makeRound()
 
   for stepNo, step in ipairs(case.steps) do
-    if step.expect then
+    if step.nextRound then
+      assert(state.phase == "round_end")
+      local scores, streaks = {}, {}
+      for i, p in ipairs(state.players) do scores[i] = p.score; streaks[i] = p.passStreak end
+      state = makeRound(scores, streaks)
+    elseif step.expect then
       checkExpect(state, step.expect, name, stepNo)
     elseif step.legal then
       local got = engine.legalCards(state, step.legal.seat + 1)

@@ -136,6 +136,7 @@
     "mustBeat": true,
     "mustOvertrump": true,
     "noTrickPenalty": 5,
-    "dealerTakesTrump": false
+    "dealerTakesTrump": false,
+    "rulesVersion": 1
   }
 }

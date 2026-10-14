@@ -7,7 +7,10 @@ import 'dart:async';
 import '../net/net_client.dart';
 import '../net/session.dart';
 import '../rules/card.dart';
+import '../rules/durak.dart';
+import '../rules/mongol13.dart';
 import '../rules/rules.dart';
+import '../rules/thousand.dart';
 import 'game_controller.dart';
 
 class RemoteGameController extends GameController {
@@ -64,6 +67,189 @@ class RemoteGameController extends GameController {
   Map<int, int> winnings = {};
   int stake = 0;
   bool locked = false;
+  String gameType = 'muushig';
+  @override
+  bool get isMongol13 => gameType == 'mongol13';
+  @override
+  bool get isDurak => gameType == 'durak';
+  @override
+  bool get isThousand => gameType == 'thousand';
+  Map<String, dynamic> thousand = {};
+  Map<String, dynamic>? _pendingThousandAction;
+  String get thousandStage => thousand['stage'] as String? ?? 'bid';
+  int get thousandBid => thousand['bid'] as int? ?? 100;
+  int get thousandContract => thousand['contract'] as int? ?? 100;
+  int get thousandBidder => thousand['bidder'] as int? ?? 0;
+  bool canAnnounceThousand(int card) =>
+      humanSeat >= 0 &&
+      humanSeat < seats.length &&
+      thousandCanAnnounce(hand, trick, seats[humanSeat].tricks, card);
+  Future<void> thousandAction(
+    String action, {
+    Object? value,
+    bool announce = false,
+  }) async {
+    if (!isThousand || !humanTurn) return;
+    final request = <String, dynamic>{
+      'action': action,
+      'value': value,
+      'announce': announce,
+    };
+    _pendingThousandAction = request;
+    _pendingCombo = [];
+    TrickCard? pending;
+    if (action == 'play' && value is String) {
+      _pendingCombo = null;
+      pending = TrickCard(humanSeat, parseCard(value));
+      _pendingPlay = pending;
+      tableMotion = TableMotionEvent(TableMotionKind.play, pending);
+    }
+    playError = null;
+    notifyListeners();
+    try {
+      await session.client.call('thousand_action', request);
+    } catch (error) {
+      if (_disposed || !identical(_pendingThousandAction, request)) return;
+      _pendingThousandAction = null;
+      _pendingCombo = null;
+      _pendingPlay = null;
+      playError = error is NetException ? error.code : 'generic';
+      playErrorVersion++;
+      if (pending != null) {
+        tableMotion = TableMotionEvent(TableMotionKind.returnCard, pending);
+      }
+      notifyListeners();
+    }
+  }
+
+  Map<String, dynamic> durak = {};
+  Map<String, dynamic>? _pendingDurakAction;
+  bool drawn = false;
+  bool restarting = false;
+  Future<void> restartDurak() async {
+    if (restarting || !(isDurak || isThousand) || !gameOver || humanSeat != 0) {
+      return;
+    }
+    restarting = true;
+    notifyListeners();
+    try {
+      await session.client.call('start_room');
+    } catch (error) {
+      if (!_disposed) {
+        playError = error is NetException ? error.code : 'generic';
+        playErrorVersion++;
+      }
+    } finally {
+      restarting = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  String get durakStage => durak['stage'] as String? ?? 'attack';
+  int get durakLimit => durak['limit'] as int? ?? 5;
+  List<DurakPair> get durakPairs => [
+    for (final p in durak['pairs'] as List? ?? [])
+      DurakPair(
+        parseCard(p['attack'] as String),
+        p['attack_seat'] as int,
+        p['cover'] is String ? parseCard(p['cover'] as String) : null,
+        p['cover_seat'] as int?,
+      ),
+  ];
+  List<DurakPair> get displayDurakPairs {
+    final pairs = [...durakPairs];
+    final action = _pendingDurakAction;
+    if (action != null) {
+      final cards = _pendingCombo ?? [];
+      if (action['action'] == 'defend' && cards.isNotEmpty) {
+        final target = action['target'] as int;
+        if (target >= 0 && target < pairs.length) {
+          pairs[target] = DurakPair(
+            pairs[target].attack,
+            pairs[target].attacker,
+            cards.first.card,
+            humanSeat,
+          );
+        }
+      } else if (action['action'] == 'attack' ||
+          action['action'] == 'transfer') {
+        pairs.addAll(cards.map((c) => DurakPair(c.card, humanSeat)));
+      }
+    }
+    return pairs;
+  }
+
+  DurakHint durakSuggestion() {
+    final def = durak['defender'] as int? ?? 0;
+    var next = (def + 1) % numPlayers;
+    for (var i = 0; i < numPlayers && seats[next].finished; i++) {
+      next = (next + 1) % numPlayers;
+    }
+    return durakHint(
+      hand,
+      durakPairs,
+      durakStage,
+      trumpSuit,
+      durakLimit,
+      durak['transfer'] == true,
+      seats[next].handCount,
+      durak['max_attacks'] as int? ?? 5,
+    );
+  }
+
+  Future<void> durakAction(
+    String action, {
+    List<int> cards = const [],
+    int? target,
+  }) async {
+    if (!isDurak || !humanTurn || !cards.every(hand.contains)) return;
+    final pending = cards.map((c) => TrickCard(humanSeat, c)).toList();
+    final request = <String, dynamic>{
+      'action': action,
+      'cards': cards.map(cardString).toList(),
+      'target': ?target,
+    };
+    _pendingDurakAction = request;
+    _pendingCombo = pending;
+    playError = null;
+    if (pending.isNotEmpty) {
+      tableMotion = TableMotionEvent(TableMotionKind.play, null, null, pending);
+    }
+    notifyListeners();
+    try {
+      await session.client.call('durak_action', request);
+    } catch (error) {
+      if (_disposed || !identical(_pendingDurakAction, request)) return;
+      _pendingDurakAction = null;
+      _pendingCombo = null;
+      playError = error is NetException ? error.code : 'generic';
+      playErrorVersion++;
+      if (pending.isNotEmpty) {
+        tableMotion = TableMotionEvent(
+          TableMotionKind.returnCard,
+          null,
+          null,
+          pending,
+        );
+      }
+      notifyListeners();
+    }
+  }
+
+  @override
+  int? openingCard;
+  bool dragon = false;
+  List<TrickCard>? _pendingCombo;
+  Map<String, dynamic> rtc = {};
+  bool get rtcEnabled => rtc['enabled'] == true;
+  int get rtcPayer => rtc['payer_uid'] as int? ?? 0;
+  int get rtcVideoEpoch => rtc['video_epoch'] as int? ?? 0;
+
+  void updateRtc(Map<String, dynamic> state) {
+    rtc = Map.of(state);
+    notifyListeners();
+  }
+
   @override
   bool trumpTaken = false;
 
@@ -103,21 +289,35 @@ class RemoteGameController extends GameController {
   int playErrorVersion = 0;
 
   @override
-  bool get playPending => _pendingPlay != null || _awaitingPlayTurn;
+  bool get playPending =>
+      _pendingPlay != null || _pendingCombo != null || _awaitingPlayTurn;
 
   @override
   List<int> get displayHand => [
     for (final card in hand)
-      if (card != _pendingPlay?.card) card,
+      if (card != _pendingPlay?.card &&
+          !(_pendingCombo?.any((t) => t.card == card) ?? false))
+        card,
   ];
 
   @override
-  List<TrickCard> get displayTrick => [
-    ...(_pendingPlay == null ? super.displayTrick : trick),
-    ?_pendingPlay,
-  ];
+  List<TrickCard> get displayTrick => isDurak
+      ? [
+          for (final p in displayDurakPairs) ...[
+            TrickCard(p.attacker, p.attack),
+            if (p.cover != null) TrickCard(p.defender ?? 0, p.cover!),
+          ],
+        ]
+      : _pendingCombo ??
+            [
+              ...(_pendingPlay == null ? super.displayTrick : trick),
+              ?_pendingPlay,
+            ];
 
   void _resetMotion() {
+    _pendingDurakAction = null;
+    _pendingThousandAction = null;
+    _pendingCombo = null;
     _pendingPlay = null;
     _awaitingPlayTurn = false;
     playError = null;
@@ -142,11 +342,53 @@ class RemoteGameController extends GameController {
   bool get passAllowed => _canPassNow;
 
   @override
-  int get maxExchangeNow =>
-      stockCount < config.maxExchange ? stockCount : config.maxExchange;
+  int get maxExchangeNow => isThousand
+      ? (thousandStage == 'give' ? 2 : 0)
+      : stockCount < config.maxExchange
+      ? stockCount
+      : config.maxExchange;
 
   @override
-  List<int> legalCards() => legalCardsFor(config, trumpSuit, trick, hand);
+  List<int> legalCards() => isThousand
+      ? thousandLegalCards(hand, trick, trumpSuit)
+      : isMongol13 || isDurak
+      ? [...hand]
+      : legalCardsFor(config, trumpSuit, trick, hand);
+
+  List<int> comboHint() =>
+      m13Hint(hand, trick.map((t) => t.card).toList(), openingCard);
+  bool validCombo(List<int> cards) =>
+      m13CanPlay(hand, cards, trick.map((t) => t.card).toList(), openingCard);
+  Future<void> playCombo(List<int> cards) async {
+    if (!humanTurn ||
+        !isMongol13 ||
+        cards.isEmpty ||
+        !cards.every(hand.contains)) {
+      return;
+    }
+    final pending = cards.map((c) => TrickCard(humanSeat, c)).toList();
+    _pendingCombo = pending;
+    playError = null;
+    tableMotion = TableMotionEvent(TableMotionKind.play, null, null, pending);
+    notifyListeners();
+    try {
+      await session.client.call('play_card', {
+        'cards': cards.map(cardString).toList(),
+      });
+    } catch (error) {
+      if (_disposed || !identical(_pendingCombo, pending)) return;
+      _pendingCombo = null;
+      playError = error is NetException ? error.code : 'generic';
+      playErrorVersion++;
+      tableMotion = TableMotionEvent(
+        TableMotionKind.returnCard,
+        null,
+        null,
+        pending,
+      );
+      notifyListeners();
+    }
+  }
 
   // ---- actions ----
 
@@ -206,7 +448,10 @@ class RemoteGameController extends GameController {
   @override
   void setAuto(bool on) => _send('auto', {'on': on});
 
-  void leaveRoom() => _send('leave_room');
+  void leaveRoom() {
+    _send('leave_room');
+    reset();
+  }
 
   /// Mid-game forfeit: the seat goes to a bot, the loss is recorded and
   /// this player is immediately free to join another game.
@@ -217,6 +462,14 @@ class RemoteGameController extends GameController {
 
   /// Clears table state after a finished game, back in the lobby.
   void reset() {
+    restarting = false;
+    durak = {};
+    thousand = {};
+    drawn = false;
+    gameType = 'muushig';
+    openingCard = null;
+    dragon = false;
+    rtc = {};
     _resetMotion();
     humanSeat = 0;
     started = false;
@@ -257,6 +510,8 @@ class RemoteGameController extends GameController {
         SeatView(
           name: s['name'] as String? ?? '?',
           rtcUid: s['rtc_uid'] as int?,
+          handCount: s['hand'] as int? ?? 0,
+          finished: s['finished'] == true,
           score: s['score'] as int? ?? config.startScore,
           tricks: s['tricks'] as int? ?? 0,
           wonCards: [
@@ -290,6 +545,8 @@ class RemoteGameController extends GameController {
     seats[seat] = SeatView(
       name: s.name,
       rtcUid: s.rtcUid,
+      handCount: s.handCount,
+      finished: s.finished,
       score: score ?? s.score,
       tricks: tricks ?? s.tricks,
       wonCards: wonCards ?? s.wonCards,
@@ -302,7 +559,99 @@ class RemoteGameController extends GameController {
 
   void _onPush(Map<String, dynamic> msg) {
     if (_disposed) return;
+    if (msg['push'] == 'rtc_state' && msg['code'] != roomCode) return;
+    if (msg['game_type'] is String) gameType = msg['game_type'] as String;
+    if (msg['thousand'] is Map) {
+      thousand = Map<String, dynamic>.from(msg['thousand'] as Map);
+    }
+    if (msg['durak'] is Map) {
+      durak = Map<String, dynamic>.from(msg['durak'] as Map);
+    }
+    if (msg['m13'] is Map) {
+      final m = msg['m13'] as Map;
+      openingCard = m['opening'] is String
+          ? parseCard(m['opening'] as String)
+          : null;
+      dragon = m['dragon'] == true;
+    }
+    if (msg['rtc'] is Map) rtc = Map<String, dynamic>.from(msg['rtc'] as Map);
     switch (msg['push'] as String) {
+      case 'rtc_state':
+        break;
+      case 'thousand_state':
+        _pendingThousandAction = null;
+        _pendingCombo = null;
+        _pendingPlay = null;
+        _awaitingPlayTurn = false;
+        humanSeat = msg['you'] as int? ?? humanSeat;
+        numPlayers = msg['size'] as int? ?? numPlayers;
+        seats = _parseSeats(msg['seats'] as List? ?? []);
+        hand = [
+          for (final c in msg['hand'] as List? ?? []) parseCard(c as String),
+        ];
+        trick = [
+          for (final t in msg['trick'] as List? ?? [])
+            TrickCard(t['seat'] as int, parseCard(t['card'] as String)),
+        ];
+        phase = _phases[msg['phase']] ?? phase;
+        turn = msg['turn'] as int? ?? turn;
+        trumpSuit = msg['trump_suit'] as int? ?? -1;
+        stockCount = msg['stock'] as int? ?? 0;
+        _canPassNow = msg['can_pass'] == true;
+        if (msg['trump'] is String) {
+          trumpCard = parseCard(msg['trump'] as String);
+        }
+      case 'durak_state':
+        final predicted =
+            _pendingDurakAction != null && msg['action_seat'] == humanSeat;
+        _pendingDurakAction = null;
+        _pendingCombo = null;
+        _awaitingPlayTurn = false;
+        humanSeat = msg['you'] as int? ?? humanSeat;
+        numPlayers = msg['size'] as int? ?? numPlayers;
+        seats = _parseSeats(msg['seats'] as List? ?? []);
+        hand = [
+          for (final c in msg['hand'] as List? ?? []) parseCard(c as String),
+        ];
+        phase = _phases[msg['phase']] ?? phase;
+        turn = msg['turn'] as int? ?? turn;
+        stockCount = msg['stock'] as int? ?? stockCount;
+        if (msg['trump'] is String) {
+          trumpCard = parseCard(msg['trump'] as String);
+        }
+        trumpSuit = msg['trump_suit'] as int? ?? trumpSuit;
+        _canPassNow = msg['can_pass'] == true;
+        if (!predicted && (msg['cards'] as List? ?? []).isNotEmpty) {
+          tableMotion = TableMotionEvent(TableMotionKind.play, null, null, [
+            for (final c in msg['cards'] as List)
+              TrickCard(msg['action_seat'] as int, parseCard(c as String)),
+          ]);
+        }
+      case 'm13_state':
+        final predicted =
+            _pendingCombo != null && msg['action_seat'] == humanSeat;
+        _pendingCombo = null;
+        _awaitingPlayTurn = false;
+        humanSeat = msg['you'] as int? ?? humanSeat;
+        numPlayers = msg['size'] as int? ?? numPlayers;
+        seats = _parseSeats(msg['seats'] as List? ?? []);
+        hand = [
+          for (final c in msg['hand'] as List? ?? []) parseCard(c as String),
+        ];
+        final m = msg['m13'] as Map;
+        trick = [
+          for (final c in m['last'] as List? ?? [])
+            TrickCard(m['last_seat'] as int? ?? 0, parseCard(c as String)),
+        ];
+        phase = _phases[msg['phase']] ?? phase;
+        turn = msg['turn'] as int? ?? turn;
+        _canPassNow = msg['can_pass'] == true;
+        if (!predicted && (msg['cards'] as List? ?? []).isNotEmpty) {
+          tableMotion = TableMotionEvent(TableMotionKind.play, null, null, [
+            for (final c in msg['cards'] as List)
+              TrickCard(msg['action_seat'] as int, parseCard(c as String)),
+          ]);
+        }
       case 'game_start' || 'snapshot':
         _resetMotion();
         completedTrick = null;
@@ -314,14 +663,25 @@ class RemoteGameController extends GameController {
         stake = msg['stake'] as int? ?? 0;
         locked = msg['locked'] as bool? ?? false;
         if (msg['config'] is Map) {
-          config = RuleConfig.fromJson((msg['config'] as Map).cast());
+          config = RuleConfig.fromJson({
+            'rulesVersion': 1,
+            ...(msg['config'] as Map).cast<String, dynamic>(),
+          });
         }
         seats = _parseSeats(msg['seats'] as List? ?? []);
         started = msg['started'] as bool? ?? true;
         gameOver = false;
+        drawn = false;
+        if (msg['push'] == 'game_start') winners = null;
         if (msg['push'] == 'snapshot') {
           roundNo = msg['round'] as int? ?? roundNo;
-          phase = _phases[msg['phase']] ?? phase;
+          phase = started ? _phases[msg['phase']] ?? phase : Phase.deciding;
+          gameOver = started && phase == Phase.gameEnd;
+          drawn = msg['draw'] == true;
+          if (msg['winners'] is List) {
+            winners = (msg['winners'] as List).cast<int>();
+          }
+          _canPassNow = msg['can_pass'] as bool? ?? false;
           turn = msg['turn'] as int? ?? turn;
           dealer = msg['dealer'] as int? ?? dealer;
           if (msg['trump'] is String) {
@@ -329,11 +689,19 @@ class RemoteGameController extends GameController {
             trumpSuit = msg['trump_suit'] as int? ?? suitOf(trumpCard);
             trumpTaken = msg['trump_taken'] == true;
           }
+          if (isThousand) trumpSuit = msg['trump_suit'] as int? ?? -1;
           stockCount = msg['stock'] as int? ?? 0;
           trick = [
             for (final t in (msg['trick'] as List? ?? []))
               TrickCard(t['seat'] as int, parseCard(t['card'] as String)),
           ];
+          if (isMongol13 && msg['m13'] is Map) {
+            final m = msg['m13'] as Map;
+            trick = [
+              for (final c in m['last'] as List? ?? [])
+                TrickCard(m['last_seat'] as int? ?? 0, parseCard(c as String)),
+            ];
+          }
           hand = [
             for (final c in (msg['hand'] as List? ?? []))
               parseCard(c as String),
@@ -350,8 +718,11 @@ class RemoteGameController extends GameController {
         started = true;
         roundNo = msg['round'] as int;
         dealer = msg['dealer'] as int;
-        trumpCard = parseCard(msg['trump'] as String);
-        trumpSuit = msg['trump_suit'] as int? ?? suitOf(trumpCard);
+        if (msg['trump'] is String) {
+          trumpCard = parseCard(msg['trump'] as String);
+        }
+        trumpSuit =
+            msg['trump_suit'] as int? ?? (isThousand ? -1 : suitOf(trumpCard));
         trumpTaken = false;
         stockCount = msg['stock'] as int;
         // Spectators receive public round updates without private cards.
@@ -449,6 +820,7 @@ class RemoteGameController extends GameController {
           );
         }
       case 'game_end':
+        drawn = msg['draw'] == true;
         phase = Phase.gameEnd;
         gameOver = true;
         winners = (msg['winners'] as List).cast<int>();

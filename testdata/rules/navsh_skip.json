@@ -73,5 +73,8 @@
         }
       }
     }
-  ]
+  ],
+  "config": {
+    "rulesVersion": 1
+  }
 }

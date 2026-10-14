@@ -16,10 +16,13 @@ local function newRtcChannel()
   end))
 end
 local rtcChannel = newRtcChannel()
+local rtc
+local rtcQueue = require "skynet.queue"()
 
 local mode, size, code
 local stake = 0 -- per-player entry fee, escrowed by the agents
 local locked = false -- kept off the lobby list; join by code/invite only
+local gameType = "muushig"
 local cfg = engine.defaultConfig()
 local players = {}   -- seat(1-based) -> {uid,name,agent,fd,bot,online,auto,misses}
 local started = false
@@ -49,12 +52,40 @@ local function push(p, msg)
 end
 
 local function broadcast(msg)
+  msg.game_type = gameType
+  if rtc then msg.rtc = rtc:state() end
   for _, p in ipairs(players) do
     push(p, msg)
   end
   for _, w in pairs(watchers) do
     push(w, msg)
   end
+end
+
+rtc = require "rtc_table".new {
+  channel = rtcChannel,
+  now = skynet.now,
+  charge = function(uid, key)
+    local ok, balance, err = pcall(skynet.call, ".db", "lua", "rtc_charge", uid, key)
+    if not ok then return nil, "rtc_billing_failed" end
+    return balance, err
+  end,
+  getBalance = function(uid)
+    local ok, balance = pcall(skynet.call, ".db", "lua", "coins_get", uid)
+    return ok and balance or nil
+  end,
+  balance = function(uid, balance)
+    for _, p in ipairs(players) do
+      if p.uid == uid then push(p, { push="rtc_balance", coins=balance }) end
+    end
+  end,
+  emit = function(state)
+    broadcast { push="rtc_state", code=code, rtc=state }
+  end,
+}
+local function rtcTick()
+  rtcQueue(function() rtc:tick() end)
+  if not rtc.closed then skynet.timeout(100, rtcTick) end
 end
 
 local function seatInfos()
@@ -72,6 +103,7 @@ local function seatInfos()
       won_cards = wonCards[i] or {},
       decision = e and e.decision,
       hand = e and #e.hand,
+      finished = e and e.finished or false,
     }
   end
   return seats
@@ -99,10 +131,22 @@ local function scores()
   return out
 end
 
+local canPass -- also used by reconnect snapshots
+
 -- Table snapshot; seat = nil for a spectator view (no hand, you = -1).
 local function snapshot(seat)
   return {
     push = "snapshot",
+    game_type = gameType,
+    thousand = st and gameType == "thousand" and engine.view(st) or nil,
+    durak = st and gameType == "durak" and engine.view(st) or nil,
+    m13 = st and gameType == "mongol13" and {
+      last = (function() local a={} for _,c in ipairs(st.last) do a[#a+1]=engine.cardString(c) end return a end)(),
+      last_seat = st.lastSeat and st.lastSeat-1,
+      opening = st.opening and engine.cardString(st.opening),
+      dragon = st.dragon or false,
+    } or nil,
+    rtc = rtc:state(),
     you = seat and seat - 1 or -1,
     started = started,
     mode = mode,
@@ -112,9 +156,11 @@ local function snapshot(seat)
     locked = locked,
     round = roundNo,
     phase = st and st.phase,
+    draw = st and st.draw or false,
+    winners = st and st.winners and (function() local out={} for _,seat in ipairs(st.winners) do out[#out+1]=seat-1 end return out end)(),
     turn = st and st.turn - 1,
     dealer = st and dealerSeat - 1,
-    trump = st and engine.cardString(st.trumpCard),
+    trump = st and st.trumpCard and engine.cardString(st.trumpCard),
     trump_suit = st and st.trumpSuit,
     trump_taken = st and st.trumpTaken or false,
     stock = st and #st.stock,
@@ -124,13 +170,18 @@ local function snapshot(seat)
     hand = (st and started and seat) and handStrings(seat) or nil,
     deadline = st and math.max(0, deadline - skynet.now()) or nil,
     config = cfg,
+    can_pass = st and (st.phase == "deciding" or gameType ~= "muushig") and canPass(),
   }
 end
 
 -- Whether the seat whose turn it is may pass (mirrors engine.decide).
-local function canPass()
+canPass = function()
+  if gameType == "thousand" then return st.stage == "bid" end
+  if gameType == "durak" then return st.stage == "add" end
+  if gameType == "mongol13" then return st.phase == "playing" and #st.last > 0 end
   local e = st.players[st.turn]
-  if e.score <= cfg.mustPlayAtScore then return false end
+  if cfg.rulesVersion < 2 and e.score <= cfg.mustPlayAtScore then return false end
+  if cfg.rulesVersion >= 2 and e.passStreak >= 3 then return false end
   local playCount, undecided = 0, 0
   for _, q in ipairs(st.players) do
     if q.decision == "play" then playCount = playCount + 1 end
@@ -142,6 +193,17 @@ end
 ---------------------------------------------------------------- game flow
 
 local announceTurn -- forward
+local endRound
+local function sendM13State(actionSeat, cards)
+  for i,p in ipairs(players) do
+    local msg = snapshot(i); msg.push = gameType == "thousand" and "thousand_state" or gameType == "durak" and "durak_state" or "m13_state"; msg.action_seat = actionSeat and actionSeat-1; msg.cards = cards
+    push(p,msg)
+  end
+  for _,w in pairs(watchers) do
+    local msg = snapshot(nil); msg.push = gameType == "thousand" and "thousand_state" or gameType == "durak" and "durak_state" or "m13_state"; msg.action_seat = actionSeat and actionSeat-1; msg.cards = cards
+    push(w,msg)
+  end
+end
 
 local function phaseActive()
   return st and (st.phase == "deciding" or st.phase == "exchanging"
@@ -157,10 +219,16 @@ end
 local function startRound(prevScores)
   roundNo = roundNo + 1
   wonCards = {}
+  local passStreaks = {}
+  for i = 1, size do
+    passStreaks[i] = prevScores and st and st.players[i].passStreak or 0
+  end
   st = engine.deal {
     players = size,
     dealer = dealerSeat,
     scores = prevScores,
+    passStreaks = passStreaks,
+    carry = gameType == "thousand" and st or nil,
     config = cfg,
   }
   -- Record the full deal for the replay.
@@ -171,11 +239,12 @@ local function startRound(prevScores)
   end
   curRound = {
     dealer = dealerSeat - 1,
-    trump = engine.cardString(st.trumpCard),
+    trump = st.trumpCard and engine.cardString(st.trumpCard),
     hands = allHands,
     stock = stockStrings,
     scores = scores(),
     actions = {},
+    pass_streaks = passStreaks,
   }
   record.rounds[#record.rounds + 1] = curRound
 
@@ -202,7 +271,8 @@ local function startRound(prevScores)
       scores = curRound.scores,
     })
   end
-  announceTurn()
+  if gameType ~= "muushig" then sendM13State() end
+  if st.phase == "game_end" then endRound() else announceTurn() end
 end
 
 --- Appends one action to the current round's replay record.
@@ -211,7 +281,7 @@ local function recordAction(seat, cmd, value)
     { s = seat - 1, c = cmd, v = value }
 end
 
-local function endRound()
+endRound = function()
   local results = {}
   for i, e in ipairs(st.players) do
     results[#results + 1] = {
@@ -224,6 +294,7 @@ local function endRound()
   broadcast { push = "round_end", round = roundNo, results = results }
 
   if st.phase == "game_end" then
+    if gameType ~= "durak" and gameType ~= "thousand" then rtcQueue(function() rtc:close() end) end
     local winners = {}
     local winnerSet = {}
     for _, s in ipairs(st.winners) do
@@ -250,6 +321,8 @@ local function endRound()
       winners = winners,
       scores = scores(),
       winnings = winnings,
+      draw = st.draw or false,
+      loser = st.loser and st.loser-1,
     }
     local humans = {}
     local uids = {}
@@ -265,7 +338,7 @@ local function endRound()
       end
     end
     if #humans > 0 then
-      skynet.call(".db", "lua", "game_result", mode, humans)
+      if not st.draw then skynet.call(".db", "lua", "game_result", mode, humans) end
       -- Persist the replay for the human participants.
       record.mode = mode
       record.size = size
@@ -281,8 +354,12 @@ local function endRound()
       record.uids = uids
       record.seat_uids = seatUids
       record.winners = winners
-      skynet.send(".db", "lua", "save_replay", uids, record)
+      if gameType == "muushig" then
+        skynet.send(".db", "lua", "save_replay", uids, record)
+      end
     end
+    if (gameType == "durak" or gameType == "thousand") and #humans > 0 then return end
+    if gameType == "durak" or gameType == "thousand" then rtcQueue(function() rtc:close() end) end
     skynet.send(".hub", "lua", "room_closed", skynet.self(), uids)
     skynet.timeout(200, function() skynet.exit() end)
   else
@@ -336,8 +413,42 @@ local function doPlay(seat, cardStr)
   return nil
 end
 
+local function doThousand(seat,action,value,announce)
+  local ok,err=engine.action(st,seat,action,value,announce)
+  if not ok then return nil,err end
+  if action=='play' then
+    broadcast {push='played',seat=seat-1,card=value}
+    if st.completed then
+      local w=st.completed.winner
+      totalTricks[w]=(totalTricks[w] or 0)+1
+      wonCards[w]=wonCards[w] or {};table.insert(wonCards[w],engine.cardString(st.completed.winningCard))
+      broadcast {push='trick_end',winner=w-1,winning_card=engine.cardString(st.completed.winningCard)}
+    end
+  end
+  sendM13State()
+  postAction()
+  return true
+end
+
 local function botAct()
   local seat = st.turn
+  if gameType == "thousand" then
+    local a=engine.hint(st,seat);assert(doThousand(seat,a.action,a.value,a.announce));return
+  end
+  if gameType == "durak" then
+    local a = engine.hint(st,seat)
+    assert(engine.action(st,seat,a.action,a.cards,a.target))
+    sendM13State(seat,a.cards or {})
+    postAction()
+    return
+  end
+  if gameType == "mongol13" then
+    local cards = engine.hint(st,seat)
+    if #cards > 0 then assert(engine.play(st,seat,cards)) else assert(engine.pass(st,seat)) end
+    sendM13State(seat,cards)
+    postAction()
+    return
+  end
   if st.phase == "deciding" then
     local play = bot.decidePlay(st, seat)
     if not engine.decide(st, seat, play) then
@@ -418,7 +529,7 @@ announceTurn = function()
     seat = st.turn - 1,
     phase = st.phase,
     deadline = timeout,
-    can_pass = st.phase == "deciding" and canPass() or nil,
+    can_pass = (st.phase == "deciding" or gameType ~= "muushig") and canPass(),
   }
   if automated then
     skynet.timeout(timeout, guard(id, botAct))
@@ -433,6 +544,7 @@ local function startGame()
   for i, p in ipairs(players) do
     push(p, {
       push = "game_start",
+      game_type = gameType,
       you = i - 1,
       size = size,
       code = code,
@@ -460,6 +572,7 @@ function CMD.info()
   return {
     code = code,
     mode = mode,
+    game_type = gameType,
     stake = stake,
     size = size,
     locked = locked,
@@ -485,6 +598,14 @@ function CMD.unwatch(uid)
 end
 
 function CMD.init(opts)
+  skynet.timeout(100, rtcTick)
+  gameType = opts.game_type or "muushig"
+  if gameType == "thousand" then engine = require "rules.thousand"; cfg = engine.defaultConfig() end
+  if gameType == "mongol13" then engine = require "rules.mongol13"; cfg = engine.defaultConfig() end
+  if gameType == "durak" then
+    engine = require "rules.durak"; cfg = engine.defaultConfig()
+    for k,v in pairs(opts.game_options or {}) do cfg[k]=v end
+  end
   mode = opts.mode
   size = opts.size
   code = opts.code
@@ -496,7 +617,7 @@ function CMD.init(opts)
       bot = p.bot or false, online = not p.bot, misses = 0,
     }
   end
-  if mode == "quick" or #players == size then
+  if gameType == "muushig" and (mode == "quick" or #players == size) then
     startGame()
   else
     broadcast { push = "room_update", code = code, size = size, stake = stake, locked = locked, seats = seatInfos() }
@@ -531,11 +652,13 @@ function CMD.join(p)
   }
   broadcast { push = "room_update", code = code, size = size, stake = stake, locked = locked, seats = seatInfos() }
   push(players[#players], snapshot(#players))
-  if #players == size then startGame() end
+  if gameType == "muushig" and #players == size then startGame() end
   return true
 end
 
 function CMD.leave(uid)
+  rtcQueue(function() rtc:remove(uid) end)
+  if (gameType == "durak" or gameType == "thousand") and st and st.phase == "game_end" then started=false; st=nil end
   if started then
     -- Leaving mid-game forfeits: the seat is handed to a bot for good,
     -- the leaver takes a recorded loss, and is free to join a new game.
@@ -545,10 +668,20 @@ function CMD.leave(uid)
     end
     if not seat then return nil, "not_in_room" end
     skynet.send(".db", "lua", "game_result", mode, {
-      { uid = uid, win = false, tricks = totalTricks[seat] or 0 },
+      { uid = uid, win = gameType == "durak" and st.players[seat].finished or false, tricks = totalTricks[seat] or 0 },
     })
     players[seat] = { bot = true, name = p.name, misses = 0 }
     skynet.send(".hub", "lua", "left_room", uid)
+    if gameType == "durak" or gameType == "thousand" then
+      local hasHuman=false
+      for _,q in ipairs(players) do if q.uid then hasHuman=true end end
+      if not hasHuman then
+        rtcQueue(function() rtc:close() end)
+        skynet.send(".hub", "lua", "room_closed", skynet.self(), {})
+        skynet.timeout(10,function() skynet.exit() end)
+        return true
+      end
+    end
     -- Everyone sees the takeover; each viewer gets their own snapshot.
     for i, q in ipairs(players) do
       push(q, snapshot(i))
@@ -569,18 +702,31 @@ function CMD.leave(uid)
   end
   skynet.send(".hub", "lua", "left_room", uid)
   if #players == 0 then
+    rtcQueue(function() rtc:close() end)
     skynet.send(".hub", "lua", "room_closed", skynet.self(), {})
     skynet.timeout(10, function() skynet.exit() end)
   else
     broadcast { push = "room_update", code = code, size = size, stake = stake, locked = locked, seats = seatInfos() }
+    for i,p in ipairs(players) do push(p,snapshot(i)) end
   end
   return true
 end
 
 --- Host (first seat) starts a friend room early; empty seats become bots.
 function CMD.start(uid)
+  if (gameType == "durak" or gameType == "thousand") and st and st.phase == "game_end" then
+    if not players[1] or players[1].uid ~= uid then return nil,"not_host" end
+    started=false; st=nil; roundNo=0; record={rounds={}}; totalTricks={}
+  end
   if started then return nil, "already_started" end
   if not players[1] or players[1].uid ~= uid then return nil, "not_host" end
+  if gameType ~= "muushig" then
+    if gameType == "thousand" and #players ~= 3 then return nil,"thousand_need_players" end
+    if #players < 2 then return nil, "m13_need_players" end
+    size = #players
+    startGame()
+    return true
+  end
   local n = 0
   while #players < size do
     n = n + 1
@@ -614,6 +760,29 @@ function CMD.action(uid, msg)
   if not started then return nil, "not_started" end
 
   p.misses = 0
+  if gameType == "thousand" then
+    if msg.cmd ~= "thousand_action" then return nil,"bad_cmd" end
+    return doThousand(seat,msg.action,msg.value,msg.announce)
+  end
+  if gameType == "durak" then
+    if msg.cmd ~= "durak_action" then return nil,"bad_cmd" end
+    local target = type(msg.target) == "number" and msg.target+1 or nil
+    local ok,err = engine.action(st,seat,msg.action,msg.cards,target)
+    if not ok then return nil,err end
+    sendM13State(seat,msg.cards or {})
+    postAction()
+    return true
+  end
+  if gameType == "mongol13" then
+    local ok, err
+    if msg.cmd == "play_card" then ok,err=engine.play(st,seat,msg.cards)
+    elseif msg.cmd == "decide" and msg.play == false then ok,err=engine.pass(st,seat)
+    else return nil,"bad_cmd" end
+    if not ok then return nil,err end
+    sendM13State(seat,msg.cards or {})
+    postAction()
+    return true
+  end
   local err
   if msg.cmd == "decide" then
     local ok, e = engine.decide(st, seat, msg.play and true or false)
@@ -673,9 +842,27 @@ function CMD.rtc_grant(uid, agent, fd)
   return { channel = rtcChannel, uid = uid, code = code }
 end
 
+-- Never accept client-selected payer, elapsed time, price or another room.
+function CMD.rtc_control(uid, agent, fd, roomCode, action, msg)
+  return rtcQueue(function()
+    local grant, err = CMD.rtc_grant(uid, agent, fd)
+    if not grant or roomCode ~= code then return nil, err or "rtc_not_seated" end
+    if action == "start" then return rtc:start() end
+    if action == "prepare" then return rtc:prepare(uid, msg.consent == true) end
+    if action == "state" then
+      if type(msg.joined) ~= "boolean" or type(msg.camera) ~= "boolean"
+          or type(msg.microphone) ~= "boolean" then return nil, "bad_request" end
+      if not rtc.enabled then return nil, "rtc_unavailable" end
+      return rtc:update(uid, msg.joined, msg.microphone, msg.camera, msg.video_epoch)
+    end
+    return nil, "bad_cmd"
+  end)
+end
+
 function CMD.rejoin(uid, agent, fd)
   local seat, p = seatOf(uid)
   if not seat then return nil, "not_in_room" end
+  rtcQueue(function() rtc:remove(uid) end)
   p.agent, p.fd = agent, fd
   p.online = true
   p.auto = false
@@ -692,6 +879,7 @@ function CMD.offline(uid)
   local seat, p = seatOf(uid)
   if not seat then return true end
   if not started then return CMD.leave(uid) end
+  rtcQueue(function() rtc:remove(uid) end)
   p.online = false
   p.agent, p.fd = nil, nil
   broadcast { push = "seat_state", seat = seat - 1, online = false,

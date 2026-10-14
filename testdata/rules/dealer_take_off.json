@@ -3,7 +3,8 @@
   "players": 2,
   "dealer": 0,
   "config": {
-    "dealerTakesTrump": false
+    "dealerTakesTrump": false,
+    "rulesVersion": 1
   },
   "hands": [
     [

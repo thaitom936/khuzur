@@ -42,6 +42,7 @@ class FakeClient extends NetClient {
   Stream<Map<String, dynamic>> get pushes => events.stream;
   Completer<Map<String, dynamic>>? seatRequest;
   final commands = <String>[];
+  final requests = <Map<String, dynamic>>[];
   Completer<Map<String, dynamic>>? pending;
   @override
   Future<Map<String, dynamic>> call(
@@ -49,6 +50,7 @@ class FakeClient extends NetClient {
     Map<String, dynamic>? args,
   ]) async {
     commands.add(cmd);
+    requests.add({'cmd': cmd, ...?args});
     if (cmd == 'join_room' && seatRequest != null) return seatRequest!.future;
     if (cmd == 'room_list') {
       if (pending != null) return pending!.future;
@@ -127,6 +129,90 @@ Future<void> mountLobby(
 }
 
 void main() {
+  testWidgets('Thousand creation is private and exactly three players', (
+    tester,
+  ) async {
+    final session = FakeSession();
+    await mountLobby(tester, session);
+    await tester.tap(find.text('Create room'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Thousand (1000)'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextButton, '2'), findsNothing);
+    expect(find.widgetWithText(TextButton, '4'), findsNothing);
+    await tester.tap(find.widgetWithText(TextButton, '3'));
+    await tester.pumpAndSettle();
+    final r = session.client.requests.lastWhere(
+      (r) => r['cmd'] == 'create_room',
+    );
+    expect(r['game_type'], 'thousand');
+    expect(r['size'], 3);
+    expect(r['locked'], isTrue);
+    expect(r['stake'], 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Durak creation sends friend-only deck and transfer options', (
+    tester,
+  ) async {
+    final session = FakeSession();
+    await mountLobby(tester, session);
+    await tester.tap(find.text('Create room'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Durak'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.text('6')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Transfer mode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: dialog, matching: find.text('2')));
+    await tester.pumpAndSettle();
+    final request = session.client.requests.lastWhere(
+      (r) => r['cmd'] == 'create_room',
+    );
+    expect(request['game_type'], 'durak');
+    expect(request['locked'], isTrue);
+    expect(request['deck_size'], 36);
+    expect(request['transfer'], isTrue);
+    expect(request['allow_draw'], isTrue);
+    expect(request['stake'], 0);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+  testWidgets(
+    'Mongol 13 creation is private, friend-only and limited to four seats',
+    (tester) async {
+      final session = FakeSession();
+      await mountLobby(tester, session);
+      await tester.tap(find.text('Create room'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mongol 13'));
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog);
+      expect(
+        find.descendant(of: dialog, matching: find.text('5')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: dialog, matching: find.text('4')),
+        findsOneWidget,
+      );
+      await tester.tap(find.descendant(of: dialog, matching: find.text('2')));
+      await tester.pumpAndSettle();
+      final request = session.client.requests.lastWhere(
+        (r) => r['cmd'] == 'create_room',
+      );
+      expect(request['game_type'], 'mongol13');
+      expect(request['locked'], isTrue);
+      expect(request['size'], 2);
+      expect(request['stake'], 0);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   test('spectator handles a new round without receiving a hand', () async {
     final session = FakeSession();
     final game = RemoteGameController(session);

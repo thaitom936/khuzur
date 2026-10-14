@@ -10,6 +10,7 @@ library;
 import 'card.dart';
 
 class RuleConfig {
+  final int rulesVersion;
   final int startScore;
   final int noTrickPenalty;
 
@@ -26,6 +27,7 @@ class RuleConfig {
   final int maxExchange;
 
   const RuleConfig({
+    this.rulesVersion = 2,
     this.startScore = 15,
     this.noTrickPenalty = 5,
     this.decidePhase = true,
@@ -43,6 +45,7 @@ class RuleConfig {
   factory RuleConfig.fromJson(Map<String, dynamic> json) {
     const def = RuleConfig();
     return RuleConfig(
+      rulesVersion: json['rulesVersion'] as int? ?? def.rulesVersion,
       startScore: json['startScore'] as int? ?? def.startScore,
       noTrickPenalty: json['noTrickPenalty'] as int? ?? def.noTrickPenalty,
       decidePhase: json['decidePhase'] as bool? ?? def.decidePhase,
@@ -53,7 +56,8 @@ class RuleConfig {
       mustOvertrump: json['mustOvertrump'] as bool? ?? def.mustOvertrump,
       mustPlayAtScore: json['mustPlayAtScore'] as int? ?? def.mustPlayAtScore,
       minPlayers: json['minPlayers'] as int? ?? def.minPlayers,
-      dealerTakesTrump: json['dealerTakesTrump'] as bool? ?? def.dealerTakesTrump,
+      dealerTakesTrump:
+          json['dealerTakesTrump'] as bool? ?? def.dealerTakesTrump,
       maxExchange: json['maxExchange'] as int? ?? def.maxExchange,
     );
   }
@@ -69,8 +73,9 @@ class PlayerState {
   Decision decision = Decision.none;
   int tricks = 0;
   bool exchanged = false;
+  int passStreak;
 
-  PlayerState(this.hand, this.score);
+  PlayerState(this.hand, this.score, [this.passStreak = 0]);
 }
 
 class TrickCard {
@@ -83,11 +88,21 @@ class TrickCard {
 /// Legal cards to play given a hand and the current trick. Standalone so
 /// the online client can compute it from its own view of the table.
 List<int> legalCardsFor(
-    RuleConfig config, int trumpSuit, List<TrickCard> trick, List<int> hand) {
+  RuleConfig config,
+  int trumpSuit,
+  List<TrickCard> trick,
+  List<int> hand,
+) {
   List<int> result;
 
   if (trick.isEmpty) {
     result = hand;
+    // Every active player starts with five cards; this only applies to
+    // the opening lead, never a later trick.
+    final ace = trumpSuit * 16 + 14;
+    if (config.rulesVersion >= 2 && hand.length == 5 && hand.contains(ace)) {
+      result = [ace];
+    }
   } else {
     final lead = suitOf(trick.first.card);
     int? topTrump;
@@ -163,8 +178,8 @@ class GameState {
     required this.players,
     required this.trumpCard,
     required this.stock,
-  })  : trumpSuit = suitOf(trumpCard),
-        turn = (dealer + 1) % numPlayers;
+  }) : trumpSuit = suitOf(trumpCard),
+       turn = (dealer + 1) % numPlayers;
 
   /// Creates the state for one round from explicit cards (card strings).
   factory GameState.newRound({
@@ -174,6 +189,7 @@ class GameState {
     int dealer = 0,
     RuleConfig config = const RuleConfig(),
     List<int>? scores,
+    List<int>? passStreaks,
   }) {
     final n = hands.length;
     if (n < 2 || n > 5) throw ArgumentError('players must be 2..5');
@@ -194,7 +210,13 @@ class GameState {
     for (var seat = 0; seat < n; seat++) {
       final hand = parseAll(hands[seat]);
       if (hand.length != 5) throw ArgumentError('each hand must have 5 cards');
-      players.add(PlayerState(hand, scores?[seat] ?? config.startScore));
+      players.add(
+        PlayerState(
+          hand,
+          scores?[seat] ?? config.startScore,
+          passStreaks?[seat] ?? 0,
+        ),
+      );
     }
     final state = GameState._(
       config: config,
@@ -208,8 +230,10 @@ class GameState {
       // Everyone plays; skip straight to exchanging (or the swap/play).
       for (final p in state.players) {
         p.decision = Decision.play;
+        p.passStreak = 0;
       }
-      if (config.exchangePhase) {
+      if (config.exchangePhase &&
+          (config.rulesVersion < 2 || state.stock.isNotEmpty)) {
         state.phase = Phase.exchanging;
         // turn is already the seat left of the dealer.
       } else {
@@ -236,6 +260,16 @@ class GameState {
     trickNo = 1;
     trick = [];
     turn = _findSeat(_nextSeat(dealer), (q) => q.decision == Decision.play)!;
+    if (config.rulesVersion >= 2) {
+      turn =
+          _findSeat(
+            _nextSeat(dealer),
+            (q) =>
+                q.decision == Decision.play &&
+                q.hand.contains(trumpSuit * 16 + 14),
+          ) ??
+          turn;
+    }
   }
 
   int _nextSeat(int seat) => (seat + 1) % numPlayers;
@@ -250,7 +284,8 @@ class GameState {
     return null;
   }
 
-  int get _playCount => players.where((p) => p.decision == Decision.play).length;
+  int get _playCount =>
+      players.where((p) => p.decision == Decision.play).length;
 
   String? _checkTurn(Phase phase, int seat) {
     if (this.phase != phase) return 'wrong_phase';
@@ -265,7 +300,12 @@ class GameState {
     final p = players[seat];
 
     if (!play) {
-      if (p.score <= config.mustPlayAtScore) return 'must_play_low_score';
+      if (config.rulesVersion < 2 && p.score <= config.mustPlayAtScore) {
+        return 'must_play_low_score';
+      }
+      if (config.rulesVersion >= 2 && p.passStreak >= 3) {
+        return 'must_play_pass_streak';
+      }
       final undecidedAfter =
           players.where((q) => q.decision == Decision.none).length - 1;
       if (_playCount + undecidedAfter < config.minPlayers) {
@@ -273,12 +313,17 @@ class GameState {
       }
     }
     p.decision = play ? Decision.play : Decision.pass;
+    p.passStreak = play ? 0 : p.passStreak + 1;
 
     final next = _findSeat(_nextSeat(seat), (q) => q.decision == Decision.none);
     if (next != null) {
       turn = next;
     } else if (_playCount == 0) {
-      phase = Phase.roundEnd; // everyone passed (only possible when minPlayers == 0)
+      phase = Phase
+          .roundEnd; // everyone passed (only possible when minPlayers == 0)
+    } else if (config.rulesVersion >= 2 &&
+        (!config.exchangePhase || stock.isEmpty)) {
+      _enterNavshOrPlay();
     } else {
       phase = Phase.exchanging;
       turn = _findSeat(_nextSeat(dealer), (q) => q.decision == Decision.play)!;
@@ -334,8 +379,10 @@ class GameState {
     p.exchanged = true;
 
     final next = _findSeat(
-        _nextSeat(seat), (q) => q.decision == Decision.play && !q.exchanged);
-    if (next != null) {
+      _nextSeat(seat),
+      (q) => q.decision == Decision.play && !q.exchanged,
+    );
+    if (next != null && (config.rulesVersion < 2 || stock.isNotEmpty)) {
       turn = next;
     } else {
       _enterNavshOrPlay();
@@ -365,7 +412,8 @@ class GameState {
     late int bestSeat;
     int? bestRank;
     for (final t in trick) {
-      if (suitOf(t.card) == ref && (bestRank == null || rankOf(t.card) > bestRank)) {
+      if (suitOf(t.card) == ref &&
+          (bestRank == null || rankOf(t.card) > bestRank)) {
         bestSeat = t.seat;
         bestRank = rankOf(t.card);
       }

@@ -1,0 +1,124 @@
+{
+  "hands": [
+    [
+      "AC",
+      "KC",
+      "QC",
+      "JC",
+      "TC"
+    ],
+    [
+      "9C",
+      "8C",
+      "AD",
+      "KD",
+      "QD"
+    ]
+  ],
+  "trump": "7C",
+  "scores": [
+    1,
+    15
+  ],
+  "config": {
+    "dealerTakesTrump": false
+  },
+  "steps": [
+    {
+      "decide": {
+        "seat": 1,
+        "play": true
+      }
+    },
+    {
+      "decide": {
+        "seat": 0,
+        "play": true
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "AC"
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "9C"
+      }
+    },
+    {
+      "expect": {
+        "phase": "playing",
+        "scores": [
+          1,
+          15
+        ]
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "KC"
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "8C"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "QC"
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "AD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "JC"
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "KD"
+      }
+    },
+    {
+      "play": {
+        "seat": 0,
+        "card": "TC"
+      }
+    },
+    {
+      "play": {
+        "seat": 1,
+        "card": "QD"
+      }
+    },
+    {
+      "expect": {
+        "phase": "game_end",
+        "scores": [
+          -4,
+          20
+        ],
+        "winners": [
+          0
+        ]
+      }
+    }
+  ],
+  "name": "rules v2: round_end_settlement",
+  "players": 2,
+  "dealer": 0
+}
