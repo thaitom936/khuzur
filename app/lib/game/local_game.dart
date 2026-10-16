@@ -52,6 +52,8 @@ class LocalGameController extends GameController {
   @override
   int get trumpCard => state.trumpCard;
   @override
+  int get trumpIndicatorCard => state.initialTrumpCard;
+  @override
   int get trumpSuit => state.trumpSuit;
   @override
   bool get trumpTaken => state.trumpTaken;
@@ -116,7 +118,15 @@ class LocalGameController extends GameController {
   }
 
   @override
-  bool get humanTurn => _phaseActive && state.turn == humanSeat;
+  bool get simultaneousDecisions =>
+      config.rulesVersion >= 2 && config.simultaneousDecisions;
+
+  @override
+  bool get humanTurn =>
+      _phaseActive &&
+      (phase == Phase.deciding && simultaneousDecisions
+          ? state.players[humanSeat].decision == Decision.none
+          : state.turn == humanSeat);
 
   bool get _phaseActive =>
       state.phase == Phase.deciding ||
@@ -270,19 +280,38 @@ class LocalGameController extends GameController {
     if (_botsRunning) return;
     _botsRunning = true;
     try {
-      while (!_disposed && _phaseActive && !humanTurn) {
+      while (!_disposed && _phaseActive) {
+        final deciding = phase == Phase.deciding && simultaneousDecisions;
+        final seat = deciding
+            ? [
+                for (var s = 0; s < numPlayers; s++)
+                  if (s != humanSeat &&
+                      state.players[s].decision == Decision.none)
+                    s,
+              ].firstOrNull
+            : humanTurn
+            ? null
+            : state.turn;
+        if (seat == null) break;
         if (completedTrick != null) {
           // Let the finished trick stay on screen before the next play.
           await Future<void>.delayed(trickPause);
         }
-        if (_disposed || !_phaseActive || humanTurn) break;
+        if (_disposed || !_phaseActive) break;
+        final round = state;
+        final actionPhase = phase;
         final think = _botThink();
         _botDeadline = DateTime.now().add(think);
         notifyListeners();
         await Future<void>.delayed(think);
-        if (_disposed || !_phaseActive || humanTurn) break;
+        if (_disposed || !_phaseActive) break;
+        if (!identical(state, round) ||
+            phase != actionPhase ||
+            (!deciding && humanTurn)) {
+          continue;
+        }
         _botDeadline = null;
-        _applyBotAction(state.turn);
+        _applyBotAction(seat);
         notifyListeners();
       }
     } finally {

@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Select images and videos to send in chat.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Take chat photos and videos, and join table video calls.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Record voice messages and join table voice calls.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

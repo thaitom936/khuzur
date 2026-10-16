@@ -13,7 +13,7 @@ import 'net_client.dart';
 /// An address saved in settings takes precedence.
 const defaultServerUrl = String.fromEnvironment(
   'SERVER_URL',
-  defaultValue: 'ws://54.254.223.5:9601/ws',
+  defaultValue: 'wss://kzur.sdg8888.com/ws',
 );
 
 class UserInfo {
@@ -40,6 +40,9 @@ class Session extends ChangeNotifier {
   final NetClient client = NetClient();
 
   UserInfo? user;
+  // UI state stays scoped to this signed-in session, including pushed chats.
+  final chatDrafts = <String, String>{};
+  final chatScrollOffsets = <String, double>{};
   String? _token;
   bool _connecting = false;
 
@@ -64,6 +67,8 @@ class Session extends ChangeNotifier {
     await prefs.setString('serverUrl', url);
     client.close();
     user = null;
+    chatDrafts.clear();
+    chatScrollOffsets.clear();
     notifyListeners();
   }
 
@@ -110,6 +115,10 @@ class Session extends ChangeNotifier {
       });
       _token = resp['token'] as String?;
       if (_token != null) await prefs.setString('token', _token!);
+    }
+    if (user != null && user!.uid != resp['uid']) {
+      chatDrafts.clear();
+      chatScrollOffsets.clear();
     }
     user = UserInfo(
       uid: resp['uid'] as int,

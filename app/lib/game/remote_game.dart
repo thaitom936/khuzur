@@ -40,6 +40,9 @@ class RemoteGameController extends GameController {
   int turn = -1;
   @override
   int trumpCard = 7;
+  int? _trumpIndicatorCard;
+  @override
+  int get trumpIndicatorCard => _trumpIndicatorCard ?? trumpCard;
   @override
   int stockCount = 0;
   @override
@@ -57,6 +60,8 @@ class RemoteGameController extends GameController {
   @override
   DateTime? turnDeadline;
   @override
+  Duration? turnDuration;
+  @override
   String? roomCode;
   @override
   final Map<int, int> chatBubbles = {};
@@ -67,7 +72,9 @@ class RemoteGameController extends GameController {
   Map<int, int> winnings = {};
   int stake = 0;
   bool locked = false;
+  bool roomDissolved = false;
   String gameType = 'muushig';
+  String? chatChannel;
   @override
   bool get isMongol13 => gameType == 'mongol13';
   @override
@@ -273,7 +280,7 @@ class RemoteGameController extends GameController {
     reset();
   }
 
-  RuleConfig config = const RuleConfig();
+  RuleConfig config = const RuleConfig(simultaneousDecisions: false);
   bool started = false;
   bool gameOver = false;
 
@@ -328,11 +335,23 @@ class RemoteGameController extends GameController {
   bool get isLocal => false;
 
   @override
+  bool get simultaneousDecisions =>
+      !isMongol13 &&
+      !isDurak &&
+      !isThousand &&
+      config.rulesVersion >= 2 &&
+      config.simultaneousDecisions;
+
+  @override
   bool get humanTurn =>
       started &&
       !gameOver &&
       !playPending &&
-      turn == humanSeat &&
+      (phase == Phase.deciding && simultaneousDecisions
+          ? humanSeat >= 0 &&
+                humanSeat < seats.length &&
+                seats[humanSeat].decision == Decision.none
+          : turn == humanSeat) &&
       (phase == Phase.deciding ||
           phase == Phase.exchanging ||
           phase == Phase.navsh ||
@@ -453,6 +472,12 @@ class RemoteGameController extends GameController {
     reset();
   }
 
+  Future<void> dissolveRoom() async {
+    final code = roomCode;
+    await session.client.call('dissolve_room', {'code': code});
+    if (roomCode == code) reset();
+  }
+
   /// Mid-game forfeit: the seat goes to a bot, the loss is recorded and
   /// this player is immediately free to join another game.
   void abandon() {
@@ -462,11 +487,14 @@ class RemoteGameController extends GameController {
 
   /// Clears table state after a finished game, back in the lobby.
   void reset() {
+    roomDissolved = false;
     restarting = false;
+    _trumpIndicatorCard = null;
     durak = {};
     thousand = {};
     drawn = false;
     gameType = 'muushig';
+    chatChannel = null;
     openingCard = null;
     dragon = false;
     rtc = {};
@@ -487,6 +515,7 @@ class RemoteGameController extends GameController {
     roundNo = 0;
     autoPlaying = false;
     turnDeadline = null;
+    turnDuration = null;
     winnings = {};
     stake = 0;
     locked = false;
@@ -559,6 +588,9 @@ class RemoteGameController extends GameController {
 
   void _onPush(Map<String, dynamic> msg) {
     if (_disposed) return;
+    if (msg['chat_channel'] is String) {
+      chatChannel = msg['chat_channel'] as String;
+    }
     if (msg['push'] == 'rtc_state' && msg['code'] != roomCode) return;
     if (msg['game_type'] is String) gameType = msg['game_type'] as String;
     if (msg['thousand'] is Map) {
@@ -576,6 +608,10 @@ class RemoteGameController extends GameController {
     }
     if (msg['rtc'] is Map) rtc = Map<String, dynamic>.from(msg['rtc'] as Map);
     switch (msg['push'] as String) {
+      case 'room_dissolved':
+        if (msg['code'] != roomCode) return;
+        reset();
+        roomDissolved = true;
       case 'rtc_state':
         break;
       case 'thousand_state':
@@ -653,6 +689,7 @@ class RemoteGameController extends GameController {
           ]);
         }
       case 'game_start' || 'snapshot':
+        roomDissolved = false;
         _resetMotion();
         completedTrick = null;
         completedTrickWinner = null;
@@ -688,6 +725,11 @@ class RemoteGameController extends GameController {
             trumpCard = parseCard(msg['trump'] as String);
             trumpSuit = msg['trump_suit'] as int? ?? suitOf(trumpCard);
             trumpTaken = msg['trump_taken'] == true;
+            if (msg['trump_indicator'] is String) {
+              _trumpIndicatorCard = parseCard(msg['trump_indicator'] as String);
+            } else if (!trumpTaken) {
+              _trumpIndicatorCard = trumpCard;
+            }
           }
           if (isThousand) trumpSuit = msg['trump_suit'] as int? ?? -1;
           stockCount = msg['stock'] as int? ?? 0;
@@ -707,6 +749,10 @@ class RemoteGameController extends GameController {
               parseCard(c as String),
           ];
           final dl = msg['deadline'] as int?;
+          final duration = msg['turn_duration'] as int?;
+          turnDuration = duration == null
+              ? null
+              : Duration(milliseconds: duration * 10);
           turnDeadline = dl == null
               ? null
               : DateTime.now().add(Duration(milliseconds: dl * 10));
@@ -720,6 +766,7 @@ class RemoteGameController extends GameController {
         dealer = msg['dealer'] as int;
         if (msg['trump'] is String) {
           trumpCard = parseCard(msg['trump'] as String);
+          _trumpIndicatorCard = trumpCard;
         }
         trumpSuit =
             msg['trump_suit'] as int? ?? (isThousand ? -1 : suitOf(trumpCard));
@@ -748,6 +795,10 @@ class RemoteGameController extends GameController {
         phase = _phases[msg['phase']] ?? phase;
         _canPassNow = msg['can_pass'] as bool? ?? true;
         final dl = msg['deadline'] as int? ?? 0;
+        final duration = msg['turn_duration'] as int?;
+        turnDuration = duration == null
+            ? null
+            : Duration(milliseconds: duration * 10);
         turnDeadline = DateTime.now().add(Duration(milliseconds: dl * 10));
       case 'decided':
         _updateSeat(
@@ -760,6 +811,10 @@ class RemoteGameController extends GameController {
       case 'exchange_result':
         hand = [for (final c in msg['hand'] as List) parseCard(c as String)];
       case 'trump_taken':
+        _trumpIndicatorCard ??= trumpCard;
+        if (msg['trump_indicator'] is String) {
+          _trumpIndicatorCard = parseCard(msg['trump_indicator'] as String);
+        }
         trumpCard = parseCard(msg['trump'] as String);
         trumpTaken = true;
       case 'played':
@@ -846,6 +901,7 @@ class RemoteGameController extends GameController {
           notifyListeners();
         });
       case 'room_update':
+        roomDissolved = false;
         roomCode = msg['code'] as String?;
         numPlayers = msg['size'] as int? ?? numPlayers;
         stake = msg['stake'] as int? ?? stake;

@@ -16,7 +16,7 @@ def value(s):return '3456789TJQKA2'.index(s[0])*4+'DCHS'.index(s[1])
 try:
  reject(a,'create_room','bad_size',size=5,game_type='mongol13')
  reject(a,'create_room','bad_stake',size=2,game_type='mongol13',stake=100)
- code=a.call('create_room',size=4,game_type='mongol13',locked=False)['code']
+ code=a.call('create_room',size=4,game_type='mongol13',locked=True)['code']
  assert all(r['code']!=code for r in a.call('room_list')['rooms']),'must be private'
  reject(a,'start_room','m13_need_players')
  b.call('join_room',code=code)

@@ -29,7 +29,7 @@
 ## 创建项目与服务端配置
 
 1. 在 [Agora Console](https://console.agora.io/) 创建国际版 RTC 项目，启用 **App Certificate / Token 鉴权**。使用应用 ID 无 Token 的测试模式不适用。
-2. 在运行 Skynet 的 Linux/WSL 服务端复制 `server/.env.rtc.example` 到 `server/.env.rtc`，填写 `AGORA_APP_ID`、`AGORA_APP_CERTIFICATE`。该文件已被 Git 忽略。不要填写到 Flutter、提交到仓库或发送到聊天。Linux 上设置 `chmod 600 .env.rtc`。
+2. 在运行 Skynet 的 Linux/WSL 服务端使用统一配置 `server/.env`，填写 `AGORA_APP_ID`、`AGORA_APP_CERTIFICATE`；R2 参数也放在同一文件。首次配置时从 `server/.env.example` 复制，已有 `.env` 时直接编辑，避免覆盖其他凭证。实际配置已被 Git 忽略。不要填写到 Flutter、提交到仓库或发送到聊天。Linux 上设置 `chmod 600 .env`。
 3. 需要 Python 3.9+（推荐 3.12），没有 pip 依赖。通过 `server/run.sh` 启动服务器；Windows 使用 `scripts/start-local-server.ps1`。直接运行 Skynet 二进制不会启动 Token 服务。
 4. 配置后重启游戏服务器。启动脚本自动启动仅监听 `127.0.0.1:9760` 的签名进程，并为本次运行生成内部随机密钥；退出时清理子进程。不要映射/公开 9760 端口。没配置凭证时正常启动打牌服务，通话返回 `rtc_unavailable`。
 5. 用新 APK 连接 `wss://kzur.sdg8888.com/ws`。同桌两台 Android 真机中一台开启麦克风，确认另一台自动接收；再确认价格并开启视频，检查画面和扣币。构建时指定新 WSS 地址；用户已保存的旧地址仍需在设置中修改。

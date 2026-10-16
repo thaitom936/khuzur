@@ -58,12 +58,16 @@ class NetClient {
       final channel = WebSocketChannel.connect(Uri.parse(_url!));
       await channel.ready;
       _channel = channel;
-      _sub = channel.stream.listen(_onData,
-          onDone: _onDisconnected, onError: (_) => _onDisconnected());
+      _sub = channel.stream.listen(
+        _onData,
+        onDone: _onDisconnected,
+        onError: (_) => _onDisconnected(),
+      );
       _retries = 0;
       _pingTimer = Timer.periodic(pingInterval, (_) {
-        call('ping', {'t': DateTime.now().millisecondsSinceEpoch})
-            .catchError((_) => <String, dynamic>{});
+        call('ping', {
+          't': DateTime.now().millisecondsSinceEpoch,
+        }).catchError((_) => <String, dynamic>{});
       });
       await onConnected?.call();
       // Enable actions only once session authentication has succeeded.
@@ -108,18 +112,23 @@ class NetClient {
 
   /// Sends a request and completes with the response map. Throws
   /// [NetException] with the server's error code on `err` responses.
-  Future<Map<String, dynamic>> call(String cmd,
-      [Map<String, dynamic>? args]) async {
+  Future<Map<String, dynamic>> call(
+    String cmd, [
+    Map<String, dynamic>? args,
+  ]) async {
     final channel = _channel;
     if (channel == null) throw NetException('offline');
     final seq = ++_seq;
     final completer = Completer<Map<String, dynamic>>();
     _pending[seq] = completer;
     channel.sink.add(jsonEncode({'seq': seq, 'cmd': cmd, ...?args}));
-    final resp = await completer.future.timeout(callTimeout, onTimeout: () {
-      _pending.remove(seq);
-      throw NetException('timeout');
-    });
+    final resp = await completer.future.timeout(
+      cmd == 'chat_media_complete' ? const Duration(seconds: 40) : callTimeout,
+      onTimeout: () {
+        _pending.remove(seq);
+        throw NetException('timeout');
+      },
+    );
     final err = resp['err'];
     if (err is String) throw NetException(err);
     return resp;

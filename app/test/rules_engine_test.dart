@@ -21,6 +21,22 @@ Directory _caseDir() {
 }
 
 void main() {
+  test('dealer exchange retains the original face-up trump for display', () {
+    final state = GameState.newRound(
+      hands: [
+        ['7C', '8C', '9C', 'TC', 'JC'],
+        ['7D', '8D', '9D', 'TD', 'JD'],
+      ],
+      trump: 'AS',
+      stock: [],
+      dealer: 0,
+      config: const RuleConfig(decidePhase: false, exchangePhase: false),
+    );
+    expect(state.takeTrump(0, '7C'), isNull);
+    expect(cardString(state.trumpCard), '7C');
+    expect(cardString(state.initialTrumpCard), 'AS');
+    expect(state.players[0].hand, contains(parseCard('AS')));
+  });
   final files =
       _caseDir()
           .listSync()

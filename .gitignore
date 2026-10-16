@@ -1,4 +1,6 @@
-# Local RTC credentials (never ship in the client).
+# Private server credentials (never ship in the client).
+server/.env
 server/.env.rtc
+server/.env.chat
 __pycache__/
 *.pyc

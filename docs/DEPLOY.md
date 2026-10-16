@@ -37,7 +37,7 @@ redis-server --version
 
 ## 2 拉取代码并编译
 
-本机先提交并推送需要部署的代码，包括 Agora 后端改动。`server/.env.rtc` 已被 Git 忽略，必须在服务器单独配置。
+本机先提交并推送需要部署的代码，包括 Agora 后端改动。`server/.env` 已被 Git 忽略，必须在服务器单独配置。
 
 服务器需要有 GitHub 仓库读取权限。以下使用 SSH 克隆：
 
@@ -130,9 +130,9 @@ MySQL 命令会提示输入密码，预期返回 `1`；Redis 预期返回 `PONG`
 
 ```bash
 cd /opt/khuzur/server
-cp .env.rtc.example .env.rtc
-chmod 600 .env.rtc
-nano .env.rtc
+[ -f .env ] || cp .env.example .env
+chmod 600 .env
+nano .env
 ```
 
 填写同一个 Agora 国际版项目的凭证：
@@ -143,7 +143,7 @@ AGORA_APP_CERTIFICATE=你的Primary_Certificate
 AGORA_TOKEN_PORT=9760
 ```
 
-启用该项目的 Certificate / Token 鉴权。证书只放在服务端，不提交 Git、不写入 APK。
+启用该项目的 Certificate / Token 鉴权。证书只放在服务端，不提交 Git、不写入 APK。Agora、R2 和聊天管理员参数都使用同一个 `.env`；R2 参数与私有存储桶设置见 [聊天配置](CHAT.md)。已有旧 `.env.rtc`、`.env.chat` 时，先保留其中的已填值并合并到 `.env`，不要用空模板覆盖。数据库连接仍使用 `etc/config`。
 
 通过 `run.sh` 启动时，会同时启动仅监听 `127.0.0.1:9760` 的 Python Token 服务。直接运行 Skynet 二进制不会启动 Token 服务。媒体由 Agora 云服务传输，游戏服务器负责牌桌权限校验和签发 Token。
 
@@ -381,7 +381,7 @@ flutter build web --release `
 | TCP 能连上但没有 WebSocket 101 | 先从服务器本机测 `/ws`；查看 Skynet 和代理日志，不能仅凭 TCP 成功判断服务正常 |
 | 握手成功但大厅进不去 | 登录响应、Redis、MySQL，是否出现内存降级或异常日志 |
 | 电脑能连，手机不能连 | 手机设置保存的地址、Wi-Fi 与移动网络差异、访问来源限制 |
-| 大厅正常，通话提示不可用 | 新后端是否部署、`.env.rtc` 是否存在、是否通过 `run.sh` 启动、9760 健康检查 |
+| 大厅正常，通话提示不可用 | 新后端是否部署、`.env` 是否存在、是否通过 `run.sh` 启动、9760 健康检查 |
 | HTTPS Web 页面无法连接游戏 | 客户端是否使用 WSS、证书是否有效、Nginx 是否配置 Upgrade 请求头 |
 | 换服务器后仍连接旧 IP | 设置中保存的地址优先于构建时默认地址；修改并重启客户端 |
 

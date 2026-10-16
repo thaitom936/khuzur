@@ -65,6 +65,11 @@ class TableCallController extends ChangeNotifier with WidgetsBindingObserver {
       game.humanSeat < game.seats.length &&
       !game.seats[game.humanSeat].bot;
 
+  bool videoOn(int? uid) =>
+      connected &&
+      uid != null &&
+      (uid == grant?.uid ? cameraOn : videos.contains(uid));
+
   bool speaking(int uid) =>
       !muted.contains(uid) &&
       (uid != grant?.uid || microphoneOn) &&

@@ -23,8 +23,10 @@ Map<String, dynamic> room(
   int bots = 0,
   int seated = 2,
   int stake = 0,
+  String game = 'muushig',
 }) => {
   'code': code,
+  'game_type': game,
   'size': 5,
   'seated': seated,
   'bots': bots,
@@ -58,7 +60,7 @@ class FakeClient extends NetClient {
       return {
         'rooms': [
           room('100001'),
-          room('100002', started: true, bots: 5, seated: 5),
+          room('100002', started: true, bots: 5, seated: 5, game: 'durak'),
         ],
       };
     }
@@ -96,6 +98,7 @@ Future<void> mountLobby(
   FakeSession session, {
   Size size = const Size(390, 844),
   double scale = 1,
+  Widget? home,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -120,7 +123,7 @@ Future<void> mountLobby(
           ).copyWith(textScaler: TextScaler.linear(scale)),
           child: child!,
         ),
-        home: const OnlineScreen(),
+        home: home ?? const OnlineScreen(),
       ),
     ),
   );
@@ -140,7 +143,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(TextButton, '2'), findsNothing);
     expect(find.widgetWithText(TextButton, '4'), findsNothing);
-    await tester.tap(find.widgetWithText(TextButton, '3'));
+    await tester.tap(find.byKey(const ValueKey('create-seats-3')));
+    await tester.tap(find.text('Create and enter'));
     await tester.pumpAndSettle();
     final r = session.client.requests.lastWhere(
       (r) => r['cmd'] == 'create_room',
@@ -159,16 +163,24 @@ void main() {
     await mountLobby(tester, session);
     await tester.tap(find.text('Create room'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Durak'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('Durak'),
+      ),
+    );
     await tester.pumpAndSettle();
     final dialog = find.byType(AlertDialog);
     expect(
       find.descendant(of: dialog, matching: find.text('6')),
       findsOneWidget,
     );
+    await tester.ensureVisible(find.text('Transfer mode'));
     await tester.tap(find.text('Transfer mode'));
     await tester.pumpAndSettle();
-    await tester.tap(find.descendant(of: dialog, matching: find.text('2')));
+    await tester.ensureVisible(find.byKey(const ValueKey('create-seats-2')));
+    await tester.tap(find.byKey(const ValueKey('create-seats-2')));
+    await tester.tap(find.text('Create and enter'));
     await tester.pumpAndSettle();
     final request = session.client.requests.lastWhere(
       (r) => r['cmd'] == 'create_room',
@@ -189,7 +201,12 @@ void main() {
       await mountLobby(tester, session);
       await tester.tap(find.text('Create room'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Mongol 13'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Mongol 13'),
+        ),
+      );
       await tester.pumpAndSettle();
       final dialog = find.byType(AlertDialog);
       expect(
@@ -200,7 +217,9 @@ void main() {
         find.descendant(of: dialog, matching: find.text('4')),
         findsOneWidget,
       );
-      await tester.tap(find.descendant(of: dialog, matching: find.text('2')));
+      await tester.ensureVisible(find.byKey(const ValueKey('create-seats-2')));
+      await tester.tap(find.byKey(const ValueKey('create-seats-2')));
+      await tester.tap(find.text('Create and enter'));
       await tester.pumpAndSettle();
       final request = session.client.requests.lastWhere(
         (r) => r['cmd'] == 'create_room',
@@ -382,13 +401,15 @@ void main() {
       find.byKey(const ValueKey('room-100001')).hitTestable(),
       findsOneWidget,
     );
-    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Waiting'));
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Waiting'));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('game-filter-muushig')),
+    );
+    await tester.tap(find.byKey(const ValueKey('game-filter-muushig')));
     await tester.pump();
     expect(find.byKey(const ValueKey('room-100001')), findsOneWidget);
     expect(find.byKey(const ValueKey('room-100002')), findsNothing);
-    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Playing'));
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Playing'));
+    await tester.ensureVisible(find.byKey(const ValueKey('game-filter-durak')));
+    await tester.tap(find.byKey(const ValueKey('game-filter-durak')));
     await tester.pump();
     expect(find.byKey(const ValueKey('room-100001')), findsNothing);
     expect(find.byKey(const ValueKey('room-100002')), findsOneWidget);
@@ -444,8 +465,8 @@ void main() {
     expect(find.text('Single player'), findsOneWidget);
     expect(
       tester
-          .widget<OutlinedButton>(
-            find.widgetWithText(OutlinedButton, 'Create room'),
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Create room'),
           )
           .onPressed,
       isNull,

@@ -18,20 +18,23 @@ class TableCallButton extends StatelessWidget {
     return IconButton(
       tooltip: l('rtcTitle'),
       icon: Icon(
-        call.connected ? Icons.headset_mic : Icons.headset_off,
+        call.cameraOn ? Icons.videocam : Icons.videocam_outlined,
         color: call.connected ? const Color(0xffbaf9df) : null,
       ),
-      onPressed: () => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (_) => ChangeNotifierProvider.value(
-          value: call,
-          child: const _CallPanel(),
-        ),
-      ),
+      onPressed: () => showTableCallPanel(context, call),
     );
   }
 }
+
+Future<void> showTableCallPanel(
+  BuildContext context,
+  TableCallController call,
+) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  builder: (_) =>
+      ChangeNotifierProvider.value(value: call, child: const _CallPanel()),
+);
 
 class _CallPanel extends StatelessWidget {
   const _CallPanel();
@@ -230,9 +233,7 @@ class CallAvatar extends StatelessWidget {
     final local = uid != null && uid == call?.grant?.uid;
     final showVideo =
         call != null &&
-        call.connected &&
-        uid != null &&
-        (local ? call.cameraOn : call.videos.contains(uid)) &&
+        call.videoOn(uid) &&
         driver is AgoraTransport &&
         driver.engine != null;
     final speaking = uid != null && (call?.speaking(uid!) ?? false);

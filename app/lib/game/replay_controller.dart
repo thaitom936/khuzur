@@ -179,6 +179,8 @@ class ReplayController extends GameController {
   @override
   int get trumpCard => state.trumpCard;
   @override
+  int get trumpIndicatorCard => state.initialTrumpCard;
+  @override
   int get trumpSuit => state.trumpSuit;
   @override
   bool get trumpTaken => state.trumpTaken;

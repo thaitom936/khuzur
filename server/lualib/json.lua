@@ -107,8 +107,15 @@ local function decodeString(s, i)
     if esc == "u" then
       local code = tonumber(s:sub(j + 2, j + 5), 16)
       if not code then error("bad \\u escape at " .. j) end
+      if code>=0xD800 and code<=0xDBFF then
+        if s:sub(j+6,j+7)~='\\u' then error('missing low surrogate at '..j) end
+        local low=tonumber(s:sub(j+8,j+11),16)
+        if not low or low<0xDC00 or low>0xDFFF then error('bad low surrogate at '..j) end
+        code=0x10000+(code-0xD800)*0x400+low-0xDC00
+        i=j+12
+      elseif code>=0xDC00 and code<=0xDFFF then error('unpaired low surrogate at '..j)
+      else i=j+6 end
       parts[#parts + 1] = utf8.char(code)
-      i = j + 6
     else
       local ch = unescapes[esc]
       if not ch then error("bad escape \\" .. esc) end

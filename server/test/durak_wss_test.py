@@ -40,7 +40,7 @@ try:
  reject(a,'create_room','bad_size',size=6,game_type='durak',deck_size=24)
  reject(a,'create_room','durak_bad_deck',size=2,game_type='durak',deck_size=32)
  reject(a,'create_room','bad_stake',size=2,game_type='durak',stake=100)
- code=a.call('create_room',size=6,game_type='durak',deck_size=36,transfer=True,allow_draw=True,locked=False)['code']
+ code=a.call('create_room',size=6,game_type='durak',deck_size=36,transfer=True,allow_draw=True,locked=True)['code']
  assert all(r['code']!=code for r in a.call('room_list')['rooms'])
  reject(a,'start_room','m13_need_players')
  for c in players[1:]:c.call('join_room',code=code)

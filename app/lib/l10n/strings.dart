@@ -37,6 +37,392 @@ const chatPhrases = {
 };
 
 const _table = <String, Map<String, String>>{
+  'roomCodeInvalid': {
+    'en': 'Enter a 6-digit room code',
+    'mn': '6 оронтой өрөөний код оруулна уу',
+    'zh': '请输入 6 位房间号',
+  },
+  'copy': {'en': 'Copy', 'mn': 'Хуулах', 'zh': '复制'},
+  'createAndEnter': {
+    'en': 'Create and enter',
+    'mn': 'Үүсгээд орох',
+    'zh': '创建并进入',
+  },
+  'roomVisibility': {
+    'en': 'Who can see the room',
+    'mn': 'Өрөөний харагдах байдал',
+    'zh': '房间可见性',
+  },
+  'publicRoom': {'en': 'Public', 'mn': 'Нээлттэй', 'zh': '公开'},
+  'inviteRoom': {'en': 'Invite only', 'mn': 'Зөвхөн урилгаар', 'zh': '仅邀请'},
+  'publicRoomHint': {
+    'en': 'Listed in the lobby. Players enter as spectators first.',
+    'mn': 'Лоббид харагдана. Эхлээд үзэгчээр орно.',
+    'zh': '显示在大厅，进桌后默认观战。',
+  },
+  'returnTable': {
+    'en': 'Return to table',
+    'mn': 'Ширээнд буцах',
+    'zh': '返回进行中的牌桌',
+  },
+  'clubInviteOnly': {
+    'en': 'Clubs can only be joined by invitation.',
+    'mn': 'Клубт зөвхөн урилгаар элсэж болно.',
+    'zh': '仅通过邀请加入俱乐部',
+  },
+  'clubNoMembership': {
+    'en': 'You have not joined a club',
+    'mn': 'Та клубт элсээгүй байна',
+    'zh': '尚未加入俱乐部',
+  },
+  'clubInvitation': {
+    'en': 'Club invitation',
+    'mn': 'Клубын урилга',
+    'zh': '俱乐部邀请',
+  },
+  'clubEnterInvite': {
+    'en': 'Enter invitation code',
+    'mn': 'Урилгын код оруулах',
+    'zh': '输入邀请码',
+  },
+  'clubInviteCode': {'en': 'Invitation code', 'mn': 'Урилгын код', 'zh': '邀请码'},
+  'clubInviteCreate': {
+    'en': 'Invite friends',
+    'mn': 'Найзуудаа урих',
+    'zh': '邀请好友',
+  },
+  'clubInvitePreview': {
+    'en': 'View invitation',
+    'mn': 'Урилга харах',
+    'zh': '查看邀请',
+  },
+  'clubInviteFrom': {'en': 'Invited by %s', 'mn': '%s урьсан', 'zh': '邀请人：%s'},
+  'clubInviteConfirm': {
+    'en': 'Confirm and join',
+    'mn': 'Баталгаажуулж элсэх',
+    'zh': '确认加入',
+  },
+  'clubInviteCopied': {
+    'en': 'Invitation code copied',
+    'mn': 'Урилгын кодыг хууллаа',
+    'zh': '邀请码已复制',
+  },
+  'clubInviteExpiry': {
+    'en': 'Expires: %s',
+    'mn': 'Дуусах хугацаа: %s',
+    'zh': '有效期至：%s',
+  },
+  'clubInviteHint': {
+    'en': 'Ask a friend for an invitation or create your own club.',
+    'mn': 'Найзаасаа урилга авах эсвэл клуб үүсгэнэ үү.',
+    'zh': '请好友发送邀请，或创建自己的俱乐部。',
+  },
+  'error_club_invite_required': {
+    'en': 'A valid invitation is required',
+    'mn': 'Хүчинтэй урилга шаардлагатай',
+    'zh': '需要有效邀请才能加入',
+  },
+  'error_club_invite_expired': {
+    'en': 'Invitation expired or invalid. Ask the owner for a new one.',
+    'mn': 'Урилга хүчингүй эсвэл хугацаа дууссан. Шинэ урилга авна уу.',
+    'zh': '邀请已失效，请联系群主重新发送',
+  },
+
+  "clubs": {"en": "Clubs", "mn": "Клубууд", "zh": "俱乐部"},
+  "lobbyChat": {"en": "Lobby chat", "mn": "Лобби чат", "zh": "大厅聊天"},
+  "tableChat": {"en": "Table chat", "mn": "Ширээний чат", "zh": "牌桌聊天"},
+  "send": {"en": "Send", "mn": "Илгээх", "zh": "发送"},
+  "chatOlder": {
+    "en": "Load earlier messages",
+    "mn": "Өмнөх зурвасууд",
+    "zh": "加载更早消息",
+  },
+  "chatPlaceholder": {
+    "en": "Write a message…",
+    "mn": "Зурвас бичих…",
+    "zh": "输入消息…",
+  },
+  "chatReadOnly": {"en": "Read only", "mn": "Зөвхөн унших", "zh": "当前只能阅读"},
+  "chatClosed": {
+    "en": "This channel is closed or your access has ended",
+    "mn": "Чат хаагдсан",
+    "zh": "频道已关闭或已失去访问权限",
+  },
+  "chatSending": {"en": "Sending…", "mn": "Илгээж байна…", "zh": "发送中…"},
+  "chatDeleted": {
+    "en": "Message deleted",
+    "mn": "Зурвас устгагдсан",
+    "zh": "消息已删除",
+  },
+  "chatUploading": {"en": "Uploading…", "mn": "Байршуулж байна…", "zh": "上传中…"},
+  "chatVerifying": {
+    "en": "Checking file…",
+    "mn": "Файл шалгаж байна…",
+    "zh": "正在校验文件…",
+  },
+  "chatRetryUpload": {
+    "en": "Retry upload",
+    "mn": "Дахин байршуулах",
+    "zh": "重试上传",
+  },
+  "chatAttachment": {"en": "Attachment", "mn": "Хавсралт", "zh": "附件"},
+  "chatEmoji": {"en": "Emoji", "mn": "Эможи", "zh": "表情"},
+  "chatSearchEmoji": {
+    "en": "Search emoji",
+    "mn": "Эможи хайх (English)",
+    "zh": "搜索表情",
+  },
+  "chatNoRecentEmoji": {
+    "en": "Your recent emoji will appear here",
+    "mn": "Сүүлд ашигласан эможи энд харагдана",
+    "zh": "使用过的表情会显示在这里",
+  },
+  "chatImage": {"en": "Image", "mn": "Зураг", "zh": "图片"},
+  "chatCamera": {"en": "Take photo", "mn": "Зураг авах", "zh": "拍照"},
+  "chatVideo": {"en": "Video", "mn": "Видео", "zh": "视频"},
+  "chatRecordVideo": {"en": "Record video", "mn": "Видео бичих", "zh": "拍摄视频"},
+  "chatVoice": {"en": "Voice", "mn": "Дуу", "zh": "语音"},
+  "chatPhotosVideos": {
+    "en": "Photos and videos",
+    "mn": "Зураг ба видео",
+    "zh": "图片和视频",
+  },
+  "chatPhoto": {"en": "Photo", "mn": "Зураг", "zh": "照片"},
+  "chatTapRecord": {
+    "en": "Record voice message",
+    "mn": "Дуут зурвас бичих",
+    "zh": "录制语音消息",
+  },
+  "chatDiscardVoice": {
+    "en": "Discard recording",
+    "mn": "Бичлэг устгах",
+    "zh": "删除录音",
+  },
+  "chatPauseRecording": {
+    "en": "Pause recording",
+    "mn": "Бичлэг түр зогсоох",
+    "zh": "暂停录音",
+  },
+  "chatResumeRecording": {
+    "en": "Resume recording",
+    "mn": "Бичлэг үргэлжлүүлэх",
+    "zh": "继续录音",
+  },
+  "chatStopRecording": {
+    "en": "Stop recording",
+    "mn": "Бичлэг зогсоох",
+    "zh": "结束录制",
+  },
+  "chatPreviewVoice": {
+    "en": "Listen to recording",
+    "mn": "Бичлэг сонсох",
+    "zh": "试听录音",
+  },
+  "chatPausePreview": {
+    "en": "Pause playback",
+    "mn": "Тоглуулахыг түр зогсоох",
+    "zh": "暂停播放",
+  },
+  "chatPlayVideo": {"en": "Play video", "mn": "Видео тоглуулах", "zh": "播放视频"},
+  "chatPreview": {"en": "Preview", "mn": "Урьдчилан харах", "zh": "预览"},
+  "chatPreviewHint": {
+    "en": "Send to this chat",
+    "mn": "Энэ чатад илгээх",
+    "zh": "发送到当前聊天",
+  },
+  "chatCameraUnavailable": {
+    "en": "Camera unavailable. Check camera permission and try again.",
+    "mn": "Камер ашиглах боломжгүй. Камерын эрхийг шалгана уу.",
+    "zh": "相机暂不可用，请检查相机权限后重试",
+  },
+  "chatFlash": {"en": "Flash", "mn": "Гэрэл", "zh": "闪光灯"},
+  "chatFlashUnavailable": {
+    "en": "Flash is unavailable for this camera",
+    "mn": "Энэ камер гэрэлгүй",
+    "zh": "当前镜头不支持此闪光灯模式",
+  },
+  "chatFlipCamera": {"en": "Switch camera", "mn": "Камер солих", "zh": "切换镜头"},
+  "chatHoldRecord": {
+    "en": "Hold to record",
+    "mn": "Дарж бичлэг хийх",
+    "zh": "按住录音",
+  },
+  "chatRecording": {
+    "en": "Recording · slide up to cancel · max 60s",
+    "mn": "Бичлэг хийж байна · дээш гулсуулж цуцлах",
+    "zh": "录音中 · 上滑取消 · 最长 60 秒",
+  },
+  "chatRecordingCancel": {
+    "en": "Release to cancel",
+    "mn": "Тавьж цуцлах",
+    "zh": "松开取消录音",
+  },
+  "chatRecovered": {
+    "en": "Send recovered file to this chat?",
+    "mn": "Сэргээсэн файлыг энэ чатад илгээх үү?",
+    "zh": "是否将恢复的文件发送到当前聊天？",
+  },
+  "chatDelete": {"en": "Delete message", "mn": "Зурвас устгах", "zh": "删除消息"},
+  "chatReport": {"en": "Report", "mn": "Мэдэгдэх", "zh": "举报"},
+  "chatBlock": {"en": "Block sender", "mn": "Илгээгчийг хаах", "zh": "屏蔽发送者"},
+  "chatMute": {
+    "en": "Mute for 1 hour",
+    "mn": "1 цаг дуугүй болгох",
+    "zh": "禁言 1 小时",
+  },
+  "mediaExpired": {
+    "en": "File expired (kept for 7 days)",
+    "mn": "Файлын хугацаа дууссан (7 хоног)",
+    "zh": "文件已过期（保留 7 天）",
+  },
+  "clubCreate": {"en": "Create club", "mn": "Клуб үүсгэх", "zh": "创建俱乐部"},
+  "clubName": {"en": "Club name", "mn": "Клубын нэр", "zh": "俱乐部名称"},
+  "clubDescription": {
+    "en": "About / announcement",
+    "mn": "Танилцуулга / зарлал",
+    "zh": "简介／公告",
+  },
+  "clubMembers": {"en": "members", "mn": "гишүүд", "zh": "位成员"},
+  "clubMine": {"en": "My club", "mn": "Миний клуб", "zh": "我的俱乐部"},
+  "clubSearch": {"en": "Find a club", "mn": "Клуб хайх", "zh": "搜索俱乐部"},
+  "clubEmpty": {"en": "No clubs yet", "mn": "Клуб байхгүй", "zh": "暂无俱乐部"},
+  "clubOwner": {"en": "Owner", "mn": "Эзэн", "zh": "会长"},
+  "clubChat": {"en": "Club chat", "mn": "Клубын чат", "zh": "俱乐部聊天"},
+  "clubJoin": {"en": "Join club", "mn": "Клубт нэгдэх", "zh": "加入俱乐部"},
+  "clubLeave": {"en": "Leave club", "mn": "Клубээс гарах", "zh": "退出俱乐部"},
+  "clubLeaveHint": {
+    "en":
+        "Leave this club? Owners must transfer ownership first if other members remain.",
+    "mn": "Клубээс гарах уу?",
+    "zh": "确定退出？有其他成员时，会长需先转让会长身份。",
+  },
+  "clubTransfer": {
+    "en": "Transfer ownership",
+    "mn": "Эзэмшил шилжүүлэх",
+    "zh": "转让会长",
+  },
+  "clubKick": {"en": "Remove member", "mn": "Гишүүн хасах", "zh": "移除成员"},
+  "error_chat_forbidden": {
+    "en": "You cannot access this chat",
+    "mn": "Танд энэ чатын эрх байхгүй",
+    "zh": "没有该频道的访问权限",
+  },
+  "error_chat_read_only": {
+    "en": "Spectators can read only",
+    "mn": "Үзэгч зөвхөн уншина",
+    "zh": "观战者只能阅读",
+  },
+  "error_chat_muted": {
+    "en": "You are muted in this channel",
+    "mn": "Та энэ чатад дуугүй болсон",
+    "zh": "你在该频道被禁言",
+  },
+  "error_chat_rate_limit": {
+    "en": "Please wait before trying again",
+    "mn": "Түр хүлээнэ үү",
+    "zh": "操作过于频繁，请稍后再试",
+  },
+  "error_chat_bad_message": {
+    "en": "Message is empty or too long",
+    "mn": "Зурвас хоосон эсвэл хэт урт",
+    "zh": "消息为空或超过 500 字",
+  },
+  "error_chat_text_only": {
+    "en": "This channel supports text and emoji only",
+    "mn": "Энэ чат зөвхөн текст ба эможи дэмжинэ",
+    "zh": "该频道只支持文字和表情",
+  },
+  "error_chat_unavailable": {
+    "en": "Chat storage is unavailable",
+    "mn": "Чат боломжгүй байна",
+    "zh": "聊天存储暂不可用",
+  },
+  "error_chat_database_failed": {
+    "en": "Could not save, please retry",
+    "mn": "Хадгалж чадсангүй",
+    "zh": "保存失败，请重试",
+  },
+  "error_club_not_member": {
+    "en": "Join the club first",
+    "mn": "Эхлээд клубт нэгдэнэ үү",
+    "zh": "请先加入该俱乐部",
+  },
+  "error_club_not_found": {
+    "en": "Club is closed or unavailable",
+    "mn": "Клуб олдсонгүй",
+    "zh": "俱乐部已关闭或不存在",
+  },
+  "error_club_already_joined": {
+    "en": "You can belong to only one club",
+    "mn": "Зөвхөн нэг клубт нэгдэнэ",
+    "zh": "同一时间只能加入一个俱乐部",
+  },
+  "error_club_transfer_first": {
+    "en": "Transfer ownership before leaving",
+    "mn": "Эзэмшлээ эхлээд шилжүүлнэ үү",
+    "zh": "请先转让会长身份，再退出",
+  },
+  "error_club_full": {
+    "en": "Club is full (200 members)",
+    "mn": "Клуб дүүрсэн",
+    "zh": "俱乐部已满（200 人）",
+  },
+  "error_club_bad_name": {
+    "en": "Enter a name of 1–40 characters",
+    "mn": "1–40 тэмдэгт нэр оруулна уу",
+    "zh": "名称需 1～40 字，简介不超过 300 字",
+  },
+  "error_media_unavailable": {
+    "en": "Media storage has not been configured yet",
+    "mn": "Медиа хадгалалт тохируулаагүй",
+    "zh": "媒体存储尚未配置，暂时可发送文字",
+  },
+  "error_media_bad_file": {
+    "en": "Unsupported or damaged file",
+    "mn": "Файл гэмтсэн эсвэл дэмжихгүй",
+    "zh": "文件格式不支持或已损坏",
+  },
+  "error_media_too_large": {
+    "en": "Image ≤5 MB, voice ≤2 MB, video ≤20 MB",
+    "mn": "Файл хэт том",
+    "zh": "图片≤5 MB、语音≤2 MB、视频≤20 MB",
+  },
+  "error_media_bad_duration": {
+    "en": "Voice and video must be within 60 seconds",
+    "mn": "60 секундээс хэтрэхгүй",
+    "zh": "语音和视频必须在 60 秒以内",
+  },
+  "error_media_storage_failed": {
+    "en": "Upload failed; try again",
+    "mn": "Байршуулахад алдаа гарлаа",
+    "zh": "上传失败，请重试",
+  },
+  "error_media_expired": {
+    "en": "File has expired",
+    "mn": "Файлын хугацаа дууссан",
+    "zh": "文件已过期",
+  },
+  "error_media_processing_unavailable": {
+    "en": "Media processing is unavailable",
+    "mn": "Медиа боловсруулах боломжгүй",
+    "zh": "媒体处理服务暂不可用",
+  },
+  "error_media_not_ready": {
+    "en": "Wait for the upload to finish",
+    "mn": "Байршуулахыг хүлээнэ үү",
+    "zh": "请等待上传及校验完成",
+  },
+  "error_chat_capture_busy": {
+    "en": "Turn off your live microphone/camera before recording",
+    "mn": "Шууд микрофон/камерыг эхлээд унтраана уу",
+    "zh": "请先关闭牌桌实时麦克风／摄像头，再录制消息",
+  },
+  "error_chat_mic_denied": {
+    "en": "Microphone permission is required",
+    "mn": "Микрофоны эрх шаардлагатай",
+    "zh": "请允许麦克风权限",
+  },
+
   "thousandFriendHint": {
     "en": "3 friends · host starts · first to 1000 wins",
     "mn": "3 найз · эзэн эхлүүлнэ · 1000 оноо",
@@ -436,6 +822,8 @@ const _table = <String, Map<String, String>>{
   'refresh': {'en': 'Refresh tables', 'mn': 'Шинэчлэх', 'zh': '刷新列表'},
   'retry': {'en': 'Retry', 'mn': 'Дахин оролдох', 'zh': '重试'},
   'dismiss': {'en': 'Dismiss', 'mn': 'Хаах', 'zh': '知道了'},
+  'close': {'en': 'Close', 'mn': 'Хаах', 'zh': '关闭'},
+  'quickChat': {'en': 'Quick phrases', 'mn': 'Бэлэн үгс', 'zh': '快捷用语'},
   'connectionFailed': {
     'en': 'Could not connect. Please try again.',
     'mn': 'Холбогдож чадсангүй. Дахин оролдоно уу.',
@@ -565,6 +953,11 @@ const _table = <String, Map<String, String>>{
   'stock': {'en': 'Stock', 'mn': 'Нөөц', 'zh': '牌堆'},
   'playBtn': {'en': 'Play', 'mn': 'Тоглоно', 'zh': '打'},
   'passBtn': {'en': 'Pass', 'mn': 'Өнжинө', 'zh': '弃'},
+  'waitingDecisions': {
+    'en': 'Waiting for other players to decide…',
+    'mn': 'Бусад тоглогчдын шийдвэрийг хүлээж байна…',
+    'zh': '等待其他玩家选择…',
+  },
   'keepAll': {'en': 'Keep all', 'mn': 'Солихгүй', 'zh': '不换牌'},
   'takeTrumpBtn': {'en': 'Navsh ⇄', 'mn': 'Навш ⇄', 'zh': 'Navsh 换'},
   'takeHint': {
@@ -637,6 +1030,33 @@ const _table = <String, Map<String, String>>{
     'en': 'Leave the game?',
     'mn': 'Тоглолтоос гарах уу?',
     'zh': '离开牌局？',
+  },
+  'dissolveRoomTitle': {
+    'en': 'Dissolve this room?',
+    'mn': 'Өрөөг тараах уу?',
+    'zh': '解散房间？',
+  },
+  'dissolveRoomBody': {
+    'en':
+        'The game has not started. Leaving as host will dissolve the room for everyone.',
+    'mn': 'Тоглолт эхлээгүй байна. Эзэн гарвал өрөө бүх хүнд хаагдана.',
+    'zh': '牌局尚未开始，房主退出将解散房间，所有玩家返回大厅。',
+  },
+  'dissolveRoom': {'en': 'Dissolve room', 'mn': 'Өрөө тараах', 'zh': '解散房间'},
+  'roomDissolved': {
+    'en': 'The host dissolved the room.',
+    'mn': 'Эзэн өрөөг тараалаа.',
+    'zh': '房主已解散房间。',
+  },
+  'leaveRoomTitle': {
+    'en': 'Leave this room?',
+    'mn': 'Өрөөнөөс гарах уу?',
+    'zh': '退出房间？',
+  },
+  'leaveRoomBody': {
+    'en': 'The game has not started. You can leave without a penalty.',
+    'mn': 'Тоглолт эхлээгүй тул торгуульгүй гарч болно.',
+    'zh': '牌局尚未开始，退出不计失败，房间继续保留。',
   },
   'leaveBody': {
     'en':

@@ -8,6 +8,7 @@ local online = {}   -- uid -> {agent, fd}
 local uid_room = {} -- uid -> room service addr
 local rooms = {}    -- room addr -> {mode, code, stake, size, locked}
 local codes = {}    -- code -> room addr
+local chatRooms={}
 
 local CMD = {}
 
@@ -67,6 +68,7 @@ function CMD.register(uid, agent, fd)
 end
 
 function CMD.offline(uid, agent, fd)
+  skynet.send('.chat','lua','offline',uid,agent,fd)
   local cur = online[uid]
   if cur and cur.agent == agent and cur.fd == fd then
     online[uid] = nil
@@ -86,6 +88,16 @@ end
 
 function CMD.is_online(uid)
   return online[uid] ~= nil
+end
+
+function CMD.chat_current(uid,agent,fd)
+  local c=online[uid];return c and c.agent==agent and c.fd==fd or false
+end
+function CMD.chat_table(uid,agent,fd,scope)
+  if not CMD.chat_current(uid,agent,fd) then return nil end
+  local room=chatRooms[scope];if not room then return nil end
+  local ok,grant=pcall(skynet.call,room,'lua','chat_access',uid,agent,fd)
+  return ok and grant or nil
 end
 
 --- Pushes a message to a user's live connection, if any.
@@ -158,6 +170,11 @@ function CMD.create_room(mode, size, players, stake, locked, botNames, gameType,
   return room, code
 end
 
+function CMD.chat_register(room,scope)
+  if not rooms[room] then return false end
+  rooms[room].chat_channel=scope;chatRooms[scope]=room;return true
+end
+
 function CMD.join_room(code, player)
   local room = codes[code]
   if not room then return nil, "room_not_found" end
@@ -180,6 +197,7 @@ function CMD.room_closed(room, uids)
   end
   local info = rooms[room]
   if info then
+    if info.chat_channel then chatRooms[info.chat_channel]=nil;skynet.send('.chat','lua','close',info.chat_channel) end
     if info.code then codes[info.code] = nil end
     rooms[room] = nil
     if info.mode == "bot" then

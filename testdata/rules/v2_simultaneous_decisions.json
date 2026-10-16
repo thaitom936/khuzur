@@ -1,0 +1,21 @@
+{
+  "name": "rules v2: independent decisions, duplicate rejection and minimum players",
+  "players": 3,
+  "dealer": 0,
+  "hands": [
+    ["AC", "KC", "QC", "JC", "TC"],
+    ["AH", "KH", "QH", "JH", "TH"],
+    ["QD", "JD", "TD", "9D", "8D"]
+  ],
+  "trump": "7H",
+  "config": {"simultaneousDecisions": true, "dealerTakesTrump": false},
+  "steps": [
+    {"decide": {"seat": 0, "play": false}},
+    {"decide": {"seat": 0, "play": true}, "error": "already_decided"},
+    {"decide": {"seat": 2, "play": false}, "error": "must_play_min_players"},
+    {"decide": {"seat": 2, "play": true}},
+    {"expect": {"phase": "deciding", "passStreaks": [1, 0, 0]}},
+    {"decide": {"seat": 1, "play": true}},
+    {"expect": {"phase": "playing", "turn": 1}}
+  ]
+}

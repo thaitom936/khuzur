@@ -37,6 +37,7 @@ function M.defaultConfig()
     startScore = 15,
     noTrickPenalty = 5,
     decidePhase = true,    -- deal, then each player opts in or passes
+    simultaneousDecisions = true,
     exchangePhase = true,
     mustFollowSuit = true,
     mustBeat = false,      -- follow suit, no need to beat
@@ -220,8 +221,14 @@ end
 
 --- Phase "deciding": choose to play (true) or pass (false).
 function M.decide(state, seat, play)
-  local ok, err = checkTurn(state, "deciding", seat)
-  if not ok then return nil, err end
+  if state.config.rulesVersion >= 2 and state.config.simultaneousDecisions then
+    if state.phase ~= "deciding" then return nil, "wrong_phase" end
+    if not state.players[seat] then return nil, "not_your_turn" end
+    if state.players[seat].decision ~= "none" then return nil, "already_decided" end
+  else
+    local ok, err = checkTurn(state, "deciding", seat)
+    if not ok then return nil, err end
+  end
   local p = state.players[seat]
 
   if not play then

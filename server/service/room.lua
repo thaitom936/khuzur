@@ -26,13 +26,17 @@ local gameType = "muushig"
 local cfg = engine.defaultConfig()
 local players = {}   -- seat(1-based) -> {uid,name,agent,fd,bot,online,auto,misses}
 local started = false
+local dissolved = false
 local st                -- engine state
 local roundNo = 0
 local dealerSeat = 1
 local turnId = 0
 local deadline = 0      -- absolute, in centiseconds (skynet.now())
+local turnDuration = 0  -- full action budget, independent of bot thinking time
+local decisionTurnId, decisionTimers
 local totalTricks = {}  -- seat -> tricks across the whole game
 local wonCards = {}     -- seat -> public winning cards in this round
+local trumpIndicatorCard -- original public card, retained after dealer exchange
 local watchers = {}     -- uid -> {uid, agent, fd}
 
 -- Full game record for replays: every deal and every action.
@@ -53,6 +57,7 @@ end
 
 local function broadcast(msg)
   msg.game_type = gameType
+  msg.chat_channel = 'table:'..rtcChannel
   if rtc then msg.rtc = rtc:state() end
   for _, p in ipairs(players) do
     push(p, msg)
@@ -137,6 +142,7 @@ local canPass -- also used by reconnect snapshots
 local function snapshot(seat)
   return {
     push = "snapshot",
+    chat_channel = 'table:'..rtcChannel,
     game_type = gameType,
     thousand = st and gameType == "thousand" and engine.view(st) or nil,
     durak = st and gameType == "durak" and engine.view(st) or nil,
@@ -163,23 +169,26 @@ local function snapshot(seat)
     trump = st and st.trumpCard and engine.cardString(st.trumpCard),
     trump_suit = st and st.trumpSuit,
     trump_taken = st and st.trumpTaken or false,
+    trump_indicator = st and gameType == "muushig" and engine.cardString(trumpIndicatorCard or st.trumpCard) or nil,
     stock = st and #st.stock,
     trickNo = st and st.trickNo,
     trick = st and trickWire(),
     seats = seatInfos(),
     hand = (st and started and seat) and handStrings(seat) or nil,
     deadline = st and math.max(0, deadline - skynet.now()) or nil,
+    turn_duration = st and turnDuration or nil,
     config = cfg,
-    can_pass = st and (st.phase == "deciding" or gameType ~= "muushig") and canPass(),
+    can_pass = st and (st.phase == "deciding" or gameType ~= "muushig") and canPass(seat),
   }
 end
 
 -- Whether the seat whose turn it is may pass (mirrors engine.decide).
-canPass = function()
+canPass = function(seat)
   if gameType == "thousand" then return st.stage == "bid" end
   if gameType == "durak" then return st.stage == "add" end
   if gameType == "mongol13" then return st.phase == "playing" and #st.last > 0 end
-  local e = st.players[st.turn]
+  local e = st.players[seat or st.turn]
+  if not e or e.decision ~= "none" then return false end
   if cfg.rulesVersion < 2 and e.score <= cfg.mustPlayAtScore then return false end
   if cfg.rulesVersion >= 2 and e.passStreak >= 3 then return false end
   local playCount, undecided = 0, 0
@@ -210,6 +219,11 @@ local function phaseActive()
     or st.phase == "navsh" or st.phase == "playing")
 end
 
+local function concurrentDecisions()
+  return gameType == "muushig" and cfg.rulesVersion >= 2
+    and cfg.simultaneousDecisions and st and st.phase == "deciding"
+end
+
 local function guard(id, fn)
   return function()
     if started and turnId == id and phaseActive() then fn() end
@@ -217,6 +231,7 @@ local function guard(id, fn)
 end
 
 local function startRound(prevScores)
+  decisionTurnId, decisionTimers = nil, nil
   roundNo = roundNo + 1
   wonCards = {}
   local passStreaks = {}
@@ -231,6 +246,7 @@ local function startRound(prevScores)
     carry = gameType == "thousand" and st or nil,
     config = cfg,
   }
+  trumpIndicatorCard = st.trumpCard
   -- Record the full deal for the replay.
   local allHands, stockStrings = {}, {}
   for i = 1, size do allHands[i] = handStrings(i) end
@@ -430,8 +446,8 @@ local function doThousand(seat,action,value,announce)
   return true
 end
 
-local function botAct()
-  local seat = st.turn
+local function botAct(decisionSeat)
+  local seat = decisionSeat or st.turn
   if gameType == "thousand" then
     local a=engine.hint(st,seat);assert(doThousand(seat,a.action,a.value,a.announce));return
   end
@@ -464,7 +480,7 @@ local function botAct()
     if give and engine.takeTrump(st, seat, give) then
       recordAction(seat, "k", give)
       broadcast { push = "trump_taken", seat = seat - 1,
-        trump = engine.cardString(st.trumpCard) }
+        trump = engine.cardString(st.trumpCard), trump_indicator = engine.cardString(trumpIndicatorCard) }
     else
       engine.skipNavsh(st, seat)
       recordAction(seat, "n", true)
@@ -503,18 +519,54 @@ local function botThink()
   return d
 end
 
-local function onTimeout()
-  local p = players[st.turn]
+local function onTimeout(decisionSeat)
+  local seat = decisionSeat or st.turn
+  local p = players[seat]
   p.misses = (p.misses or 0) + 1
   if p.misses >= 2 and not p.auto then
     p.auto = true
-    broadcast { push = "seat_state", seat = st.turn - 1, online = p.online ~= false,
+    broadcast { push = "seat_state", seat = seat - 1, online = p.online ~= false,
       auto = true }
   end
-  botAct()
+  botAct(decisionSeat)
 end
 
 announceTurn = function()
+  if concurrentDecisions() then
+    if not decisionTurnId then
+      turnId = turnId + 1
+      decisionTurnId, decisionTimers = turnId, {}
+      turnDuration = T.decide
+      deadline = skynet.now() + T.decide
+    end
+    local id = decisionTurnId
+    local remaining = math.max(0, deadline - skynet.now())
+    for seat, p in ipairs(players) do
+      push(p, { push="turn", game_type=gameType, phase="deciding", seat=st.turn-1,
+        deadline=remaining, turn_duration=turnDuration, can_pass=canPass(seat) })
+      if st.players[seat].decision == "none" then
+        local automated = p.bot or p.auto or p.online == false
+        local previous = decisionTimers[seat]
+        if not previous or previous.automated ~= automated then
+          local token = { automated=automated }
+          decisionTimers[seat] = token
+          local delay = automated and math.min(remaining, botThink()) or remaining
+          skynet.timeout(delay, guard(id, function()
+            if concurrentDecisions() and decisionTimers[seat] == token
+                and st.players[seat].decision == "none" then
+              if automated then botAct(seat) else onTimeout(seat) end
+            end
+          end))
+        end
+      end
+    end
+    for _, w in pairs(watchers) do
+      push(w, { push="turn", game_type=gameType, phase="deciding", seat=st.turn-1,
+        deadline=remaining, turn_duration=turnDuration, can_pass=false })
+    end
+    return
+  end
+  decisionTurnId, decisionTimers = nil, nil
   turnId = turnId + 1
   local id = turnId
   local timeout = st.phase == "deciding" and T.decide
@@ -522,17 +574,19 @@ announceTurn = function()
     or T.play
   local cur = players[st.turn]
   local automated = cur.bot or cur.auto or cur.online == false
-  if automated then timeout = math.min(timeout, botThink()) end
+  local actionDelay = automated and math.min(timeout, botThink()) or timeout
+  turnDuration = timeout
   deadline = skynet.now() + timeout
   broadcast {
     push = "turn",
     seat = st.turn - 1,
     phase = st.phase,
     deadline = timeout,
+    turn_duration = turnDuration,
     can_pass = (st.phase == "deciding" or gameType ~= "muushig") and canPass(),
   }
   if automated then
-    skynet.timeout(timeout, guard(id, botAct))
+    skynet.timeout(actionDelay, guard(id, botAct))
   else
     skynet.timeout(timeout, guard(id, onTimeout))
   end
@@ -544,6 +598,7 @@ local function startGame()
   for i, p in ipairs(players) do
     push(p, {
       push = "game_start",
+      chat_channel = 'table:'..rtcChannel,
       game_type = gameType,
       you = i - 1,
       size = size,
@@ -570,6 +625,7 @@ function CMD.info()
   local watcherCount = 0
   for _ in pairs(watchers) do watcherCount = watcherCount + 1 end
   return {
+    chat_channel = 'table:'..rtcChannel,
     code = code,
     mode = mode,
     game_type = gameType,
@@ -585,8 +641,17 @@ function CMD.info()
   }
 end
 
+function CMD.chat_access(uid,agent,fd)
+  for i,p in ipairs(players) do
+    if p.uid==uid and p.agent==agent and p.fd==fd and p.online~=false then return {write=true,moderator=i==1} end
+  end
+  local w=watchers[uid]
+  if w and w.agent==agent and w.fd==fd then return {write=false,moderator=false} end
+end
+
 --- Adds a spectator; they get every broadcast but never any hand.
 function CMD.watch(p)
+  if dissolved then return nil, "not_in_room" end
   watchers[p.uid] = { uid = p.uid, agent = p.agent, fd = p.fd }
   push(watchers[p.uid], snapshot(nil))
   return true
@@ -609,6 +674,7 @@ function CMD.init(opts)
   mode = opts.mode
   size = opts.size
   code = opts.code
+  skynet.send('.hub','lua','chat_register',skynet.self(),'table:'..rtcChannel)
   stake = opts.stake or 0
   locked = opts.locked or false
   for _, p in ipairs(opts.players) do
@@ -642,6 +708,7 @@ function CMD.init(opts)
 end
 
 function CMD.join(p)
+  if dissolved then return nil, "not_in_room" end
   -- One game is one sitting: once play starts, nobody new sits down.
   if started then return nil, "already_started" end
   if #players >= size then return nil, "room_full" end
@@ -656,7 +723,30 @@ function CMD.join(p)
   return true
 end
 
+function CMD.dissolve(uid)
+  if dissolved then return nil, "not_in_room" end
+  if started then return nil, "already_started" end
+  if mode ~= "friend" or not players[1] or players[1].uid ~= uid then
+    return nil, "not_host"
+  end
+  dissolved = true
+  local uids = {}
+  for _, p in ipairs(players) do
+    if p.uid then
+      uids[#uids + 1] = p.uid
+      -- Entry fees are escrowed until play starts.
+      if stake > 0 then skynet.send(".db", "lua", "coins_add", p.uid, stake) end
+    end
+  end
+  broadcast { push = "room_dissolved", code = code }
+  rtcQueue(function() rtc:close() end)
+  skynet.call(".hub", "lua", "room_closed", skynet.self(), uids)
+  skynet.timeout(10, function() skynet.exit() end)
+  return true
+end
+
 function CMD.leave(uid)
+  if dissolved then return nil, "not_in_room" end
   rtcQueue(function() rtc:remove(uid) end)
   if (gameType == "durak" or gameType == "thousand") and st and st.phase == "game_end" then started=false; st=nil end
   if started then
@@ -689,7 +779,7 @@ function CMD.leave(uid)
     for _, w in pairs(watchers) do
       push(w, snapshot(nil))
     end
-    if phaseActive() and st.turn == seat then
+    if phaseActive() and (st.turn == seat or concurrentDecisions()) then
       announceTurn() -- the bot takes over this turn immediately
     end
     return true
@@ -714,6 +804,7 @@ end
 
 --- Host (first seat) starts a friend room early; empty seats become bots.
 function CMD.start(uid)
+  if dissolved then return nil, "not_in_room" end
   if (gameType == "durak" or gameType == "thousand") and st and st.phase == "game_end" then
     if not players[1] or players[1].uid ~= uid then return nil,"not_host" end
     started=false; st=nil; roundNo=0; record={rounds={}}; totalTricks={}
@@ -755,6 +846,7 @@ function CMD.action(uid, msg)
     p.misses = 0
     broadcast { push = "seat_state", seat = seat - 1, online = p.online,
       auto = p.auto }
+    if concurrentDecisions() then announceTurn() end
     return true
   end
   if not started then return nil, "not_started" end
@@ -798,7 +890,7 @@ function CMD.action(uid, msg)
     if not err then
       recordAction(seat, "k", msg.card)
       broadcast { push = "trump_taken", seat = seat - 1,
-        trump = engine.cardString(st.trumpCard) }
+        trump = engine.cardString(st.trumpCard), trump_indicator = engine.cardString(trumpIndicatorCard) }
       push(p, { push = "exchange_result", hand = handStrings(seat) })
       postAction()
     end
@@ -869,7 +961,7 @@ function CMD.rejoin(uid, agent, fd)
   p.misses = 0
   broadcast { push = "seat_state", seat = seat - 1, online = true, auto = false }
   push(p, snapshot(seat))
-  if started and phaseActive() and st.turn == seat then
+  if started and phaseActive() and (st.turn == seat or concurrentDecisions()) then
     announceTurn() -- restart this turn's timer as a human turn
   end
   return true
@@ -884,7 +976,7 @@ function CMD.offline(uid)
   p.agent, p.fd = nil, nil
   broadcast { push = "seat_state", seat = seat - 1, online = false,
     auto = p.auto or false }
-  if phaseActive() and st.turn == seat then
+  if phaseActive() and (st.turn == seat or concurrentDecisions()) then
     announceTurn() -- hand the current turn to the bot
   end
   return true
@@ -892,7 +984,7 @@ end
 
 skynet.start(function()
   math.randomseed()
-  T.decide = tonumber(skynet.getenv "timeout_decide") or 1000
+  T.decide = tonumber(skynet.getenv "timeout_decide") or 1500
   T.exchange = tonumber(skynet.getenv "timeout_exchange") or 1500
   T.play = tonumber(skynet.getenv "timeout_play") or 1500
   T.bot_delay = tonumber(skynet.getenv "bot_delay") or 300

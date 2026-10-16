@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../game/remote_game.dart';
@@ -28,7 +27,6 @@ class _SpectatorControlsState extends State<SpectatorControls> {
     });
     try {
       await widget.game.takeSeat();
-      if (mounted && !widget.game.started) GoRouter.of(context).go('/online');
     } on NetException catch (e) {
       if (mounted) setState(() => _error = e.code);
     } finally {

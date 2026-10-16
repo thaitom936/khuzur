@@ -10,6 +10,8 @@ import 'package:card/play_session/card_widget.dart';
 import 'package:card/play_session/play_session_screen.dart';
 import 'package:card/play_session/table_motion.dart';
 import 'package:card/play_session/turn_countdown_avatar.dart';
+import 'package:card/rtc/table_call_controller.dart';
+import 'package:card/rtc/table_call_widgets.dart';
 import 'package:card/rules/card.dart' as cards;
 import 'package:card/rules/rules.dart';
 import 'package:card/settings/persistence/memory_settings_persistence.dart';
@@ -22,10 +24,14 @@ import 'package:provider/provider.dart';
 class _Client extends NetClient {
   final events = StreamController<Map<String, dynamic>>.broadcast();
   final requests = <Completer<Map<String, dynamic>>>[];
+  final commands = <String>[];
+  final arguments = <Map<String, dynamic>?>[];
   @override
   Stream<Map<String, dynamic>> get pushes => events.stream;
   @override
   Future<Map<String, dynamic>> call(String cmd, [Map<String, dynamic>? args]) {
+    commands.add(cmd);
+    arguments.add(args);
     final request = Completer<Map<String, dynamic>>();
     requests.add(request);
     return request.future;
@@ -82,6 +88,7 @@ Future<void> _mount(
   bool reduced = false,
   Size size = const Size(800, 900),
   double scale = 1,
+  TableCallController? call,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -98,6 +105,8 @@ Future<void> _mount(
         Provider<AudioController>(create: (_) => _SilentAudio()),
         ChangeNotifierProvider<Session>.value(value: session),
         ChangeNotifierProvider<GameController>.value(value: game),
+        if (call != null)
+          ChangeNotifierProvider<TableCallController>.value(value: call),
       ],
       child: MaterialApp(
         builder: (context, child) => MediaQuery(
@@ -115,6 +124,69 @@ Future<void> _mount(
 }
 
 void main() {
+  testWidgets(
+    'Muushig waits on the table, hides bot start/cancel, confirms host dissolution',
+    (tester) async {
+      final session = _Session();
+      final game = _gameFor(session)
+        ..started = false
+        ..roomCode = '123456'
+        ..numPlayers = 5;
+      await _mount(tester, session, game, size: const Size(390, 844));
+      expect(find.byKey(const ValueKey('table-empty-seat-4')), findsOneWidget);
+      expect(find.byKey(const ValueKey('table-hand')), findsNothing);
+      expect(find.byKey(const ValueKey('table-stock')), findsNothing);
+      expect(find.byKey(const ValueKey('table-actions')), findsNothing);
+      expect(find.text('Invite friends'), findsOneWidget);
+      expect(find.text('Start with bots'), findsNothing);
+      expect(find.text('Cancel'), findsNothing);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Dissolve this room?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(session.client.commands, isEmpty);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Dissolve room'));
+      await tester.pumpAndSettle();
+      expect(session.client.commands, ['dissolve_room']);
+      session.client.requests.single.completeError(
+        NetException('already_started'),
+      );
+      await tester.pumpAndSettle();
+      expect(game.roomCode, '123456');
+      await tester.pumpWidget(const SizedBox());
+      game.dispose();
+      await session.client.events.close();
+    },
+  );
+
+  test(
+    'Dissolution clears the matching table and ignores another room notification',
+    () async {
+      final session = _Session();
+      final game = _gameFor(session)..roomCode = '123456';
+      await _push(session, {'push': 'room_dissolved', 'code': 'other'});
+      expect(game.roomCode, '123456');
+      await _push(session, {'push': 'room_dissolved', 'code': '123456'});
+      expect(game.roomCode, isNull);
+      expect(game.seats, isEmpty);
+      expect(game.roomDissolved, isTrue);
+      await _push(session, {
+        'push': 'room_update',
+        'code': '654321',
+        'size': 2,
+        'seats': [
+          {'name': 'Host'},
+        ],
+      });
+      expect(game.roomCode, '654321');
+      expect(game.roomDissolved, isFalse);
+      game.dispose();
+      await session.client.events.close();
+    },
+  );
   test(
     'Thousand optimistic play returns on rejection and state restores variable trump',
     () async {
@@ -550,6 +622,86 @@ void main() {
     await session.client.events.close();
   });
 
+  testWidgets(
+    'all undecided players choose at once and accepted choices stop their CD',
+    (tester) async {
+      game.config = const RuleConfig();
+      game.phase = Phase.deciding;
+      game.turn = 1;
+      game.turnDuration = const Duration(seconds: 15);
+      game.turnDeadline = DateTime.now().add(const Duration(seconds: 15));
+      game.seats = List.generate(
+        2,
+        (i) => SeatView(
+          name: 'Player $i',
+          score: 15,
+          tricks: 0,
+          decision: Decision.none,
+        ),
+      );
+      await _mount(tester, session, game);
+      expect(game.humanTurn, isTrue);
+      expect(
+        tester
+            .widgetList<TurnCountdownAvatar>(find.byType(TurnCountdownAvatar))
+            .where((a) => a.active),
+        hasLength(2),
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Play'));
+      expect(session.client.commands, ['decide']);
+      session.client.events.add({'push': 'decided', 'seat': 0, 'play': true});
+      await tester.pump();
+      expect(game.humanTurn, isFalse);
+      expect(find.textContaining('Waiting for other players'), findsOneWidget);
+      expect(
+        tester
+            .widgetList<TurnCountdownAvatar>(find.byType(TurnCountdownAvatar))
+            .where((a) => a.active),
+        hasLength(1),
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  for (final keep in [true, false]) {
+    testWidgets(
+      'exchange shows both Keep and Exchange; keep=$keep respects selected cards',
+      (tester) async {
+        game.phase = Phase.exchanging;
+        game.stockCount = 6;
+        await _mount(
+          tester,
+          session,
+          game,
+          size: const Size(320, 568),
+          scale: 1.5,
+        );
+        final keepButton = find.widgetWithText(FilledButton, 'Keep all');
+        final exchangeButton = find.widgetWithText(FilledButton, 'Exchange');
+        expect(keepButton, findsOneWidget);
+        expect(tester.widget<FilledButton>(exchangeButton).onPressed, isNull);
+        final hand = find.byKey(const ValueKey('hand-card-8'));
+        await tester.ensureVisible(hand);
+        await tester.tap(hand);
+        await tester.pump();
+        expect(keepButton, findsOneWidget);
+        expect(find.widgetWithText(FilledButton, 'Exchange 1'), findsOneWidget);
+        final action = keep
+            ? keepButton
+            : find.widgetWithText(FilledButton, 'Exchange 1');
+        await tester.ensureVisible(action);
+        await tester.tap(action);
+        expect(session.client.commands, ['exchange']);
+        expect(
+          session.client.arguments.single?['cards'],
+          keep ? isEmpty : ['8C'],
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
   test(
     'dealer trade keeps original trump through pushes and reconnect',
     () async {
@@ -564,6 +716,7 @@ void main() {
       });
       await _push(session, {'push': 'trump_taken', 'seat': 1, 'trump': '8C'});
       expect(game.trumpCard, 8);
+      expect(game.trumpIndicatorCard, cards.parseCard('8D'));
       expect(game.trumpSuit, 1);
       expect(game.trumpTaken, isTrue);
       await _push(session, {
@@ -571,6 +724,7 @@ void main() {
         'trump': '8C',
         'trump_suit': 1,
         'trump_taken': true,
+        'trump_indicator': '8D',
         'phase': 'playing',
         'turn': 0,
         'hand': ['AC', '7D'],
@@ -580,6 +734,7 @@ void main() {
       });
       expect(game.trumpSuit, 1);
       expect(game.trumpTaken, isTrue);
+      expect(game.trumpIndicatorCard, cards.parseCard('8D'));
       expect(game.legalCards(), [
         23,
       ]); // Must trump hearts with diamonds, not clubs.
@@ -593,30 +748,66 @@ void main() {
       });
       expect(game.trumpSuit, 0);
       expect(game.trumpTaken, isFalse);
+      expect(game.trumpIndicatorCard, cards.parseCard('KC'));
+    },
+  );
+
+  test(
+    'Turn and snapshot keep the 15-second budget separate from remaining time',
+    () async {
+      await _push(session, {
+        'push': 'turn',
+        'seat': 0,
+        'phase': 'playing',
+        'deadline': 1500,
+        'turn_duration': 1500,
+      });
+      expect(game.turnDuration, const Duration(seconds: 15));
+      expect(
+        game.turnDeadline!.difference(DateTime.now()).inSeconds,
+        inInclusiveRange(14, 15),
+      );
+      await _push(session, {
+        'push': 'snapshot',
+        'started': true,
+        'phase': 'playing',
+        'deadline': 700,
+        'turn_duration': 1500,
+      });
+      expect(game.turnDuration, const Duration(seconds: 15));
+      expect(
+        game.turnDeadline!.difference(DateTime.now()).inSeconds,
+        inInclusiveRange(6, 7),
+      );
     },
   );
 
   testWidgets(
-    'traded-away indicator shows fixed trump suit instead of discard',
+    'dealer exchange keeps the original face-up card visible at the stock',
     (tester) async {
-      game.trumpCard = 8;
-      game.trumpSuit = 1;
-      game.trumpTaken = true;
+      session.client.events.add({
+        'push': 'snapshot',
+        'trump': '8C',
+        'trump_indicator': '8D',
+        'trump_suit': 1,
+        'trump_taken': true,
+        'started': true,
+        'phase': 'playing',
+        'hand': ['AC', '7D'],
+        'seats': [
+          {'name': 'A'},
+          {'name': 'B'},
+        ],
+      });
       await _mount(tester, session, game);
       final stock = find.byKey(const ValueKey('table-stock'));
-      final marker = find.byKey(const ValueKey('fixed-trump-suit'));
-      expect(
+      final indicator = tester.widget<CardView>(
         find.descendant(of: stock, matching: find.byType(CardView)),
-        findsNothing,
       );
-      expect(
-        find.descendant(of: marker, matching: find.text('♦')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: marker, matching: find.text('Trump')),
-        findsOneWidget,
-      );
+      expect(indicator.card, cards.parseCard('8D'));
+      expect(indicator.width, 36);
+      expect(find.byKey(const ValueKey('fixed-trump-suit')), findsNothing);
+      expect(find.text('Trump'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -627,8 +818,12 @@ void main() {
     (const Size(390, 844), 2.0),
   ]) {
     testWidgets(
-      'five seats rotate around viewer and stay clear at $size x$scale',
+      'Muushig 2-2-1 seats rotate around viewer and stay clear at $size x$scale',
       (tester) async {
+        tester.view.padding = const FakeViewPadding(bottom: 34);
+        tester.view.viewPadding = const FakeViewPadding(bottom: 34);
+        addTearDown(tester.view.resetPadding);
+        addTearDown(tester.view.resetViewPadding);
         game.numPlayers = 5;
         game.humanSeat = 3;
         game.turn = 3;
@@ -645,31 +840,121 @@ void main() {
         await _mount(tester, session, game, size: size, scale: scale);
         Rect rect(String key) => tester.getRect(find.byKey(ValueKey(key)));
         final me = rect('table-seat-3');
-        final upperRight = rect('table-seat-4');
-        final upperMiddle = rect('table-seat-0');
+        final lowerRight = rect('table-seat-4');
+        final upperRight = rect('table-seat-0');
         final upperLeft = rect('table-seat-1');
         final lowerLeft = rect('table-seat-2');
-        expect(me.center.dx, closeTo(size.width * .78, 1));
+        expect(me.center.dx, closeTo(size.width * .5, 1));
         expect(upperRight.top, upperLeft.top);
-        expect(upperMiddle.top, upperLeft.top);
-        expect(me.top, lowerLeft.top);
-        expect(me.width, greaterThanOrEqualTo(88));
-        expect(upperLeft.right, lessThan(upperMiddle.left));
-        expect(upperMiddle.right, lessThan(upperRight.left));
+        expect(lowerRight.top, lowerLeft.top);
+        expect(lowerLeft.bottom, lessThan(me.top));
+        expect(upperLeft.right, lessThan(upperRight.left));
+        expect(lowerLeft.right, lessThan(lowerRight.left));
         expect(upperLeft.bottom, lessThan(lowerLeft.top));
         expect(me.bottom, lessThan(rect('table-hand').top));
         expect(rect('table-stock').overlaps(lowerLeft), isFalse);
         expect(rect('table-stock').overlaps(me), isFalse);
-        expect(rect('table-center').overlaps(upperMiddle), isFalse);
-        expect(rect('table-center').bottom, lessThan(lowerLeft.top - 36));
+        expect(rect('table-stock').overlaps(rect('table-center')), isFalse);
+        expect(rect('table-stock').top, greaterThan(upperLeft.bottom));
+        expect(rect('table-stock').bottom, lessThan(lowerLeft.top - 40));
+        expect(rect('table-center').overlaps(upperRight), isFalse);
+        expect(rect('table-center').bottom, lessThan(lowerLeft.top));
         expect(rect('table-actions').overlaps(me), isFalse);
         expect(rect('table-actions').overlaps(lowerLeft), isFalse);
+        expect(rect('table-actions').bottom, lessThan(rect('table-hand').top));
         expect(
-          rect('table-actions').top,
-          greaterThanOrEqualTo(rect('table-hand').bottom),
+          rect('table-actions').overlaps(rect('table-communication-controls')),
+          isFalse,
         );
+        await tester.ensureVisible(find.byKey(const ValueKey('table-hand')));
+        await tester.pump();
+        expect(rect('table-hand').bottom, closeTo(size.height - 34 - 12, .1));
         expect(tester.takeException(), isNull);
+        for (final avatar in tester.widgetList<CallAvatar>(
+          find.byType(CallAvatar),
+        )) {
+          expect(avatar.portrait, isFalse);
+          expect(avatar.size, const Size.square(46));
+        }
         await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
+  for (final scale in [1.0, 2.0]) {
+    testWidgets(
+      'Only live video enlarges Muushig avatars and closing restores them x$scale',
+      (tester) async {
+        game.numPlayers = 5;
+        game.roomCode = '123456';
+        game.phase = Phase.deciding;
+        game.seats = List.generate(
+          5,
+          (i) => SeatView(
+            name: 'Player $i',
+            score: 15,
+            tricks: 0,
+            decision: Decision.none,
+            rtcUid: 100 + i,
+          ),
+        );
+        final call = TableCallController(session, game, supported: false);
+        await _mount(
+          tester,
+          session,
+          game,
+          call: call,
+          size: const Size(355, 486),
+          scale: scale,
+        );
+        CallAvatar avatar(int seat) => tester.widget<CallAvatar>(
+          find.descendant(
+            of: find.byKey(ValueKey('table-seat-$seat')),
+            matching: find.byType(CallAvatar),
+          ),
+        );
+        Rect rect(String key) => tester.getRect(find.byKey(ValueKey(key)));
+        expect(avatar(1).size, const Size.square(46));
+        call.connected = true;
+        call.videos.add(101);
+        call.notifyListeners();
+        await tester.pump();
+        expect(avatar(1).portrait, isTrue);
+        expect(avatar(1).size.width, greaterThan(46));
+        expect(avatar(0).size, const Size.square(46));
+        expect(avatar(2).size, const Size.square(46));
+        expect(rect('table-center').bottom, lessThan(rect('table-seat-1').top));
+        expect(rect('table-seat-0').bottom, lessThan(rect('table-hand').top));
+        expect(tester.takeException(), isNull);
+        call.videos.addAll([100, 102, 103, 104]);
+        call.notifyListeners();
+        await tester.pump();
+        expect(rect('table-center').bottom, lessThan(rect('table-seat-1').top));
+        expect(rect('table-stock').overlaps(rect('table-seat-1')), isFalse);
+        expect(rect('table-stock').overlaps(rect('table-seat-4')), isFalse);
+        expect(rect('table-stock').overlaps(rect('table-center')), isFalse);
+        expect(
+          rect('table-stock').bottom,
+          lessThan(rect('table-seat-4').top - 40),
+        );
+        expect(rect('table-seat-1').bottom, lessThan(rect('table-seat-0').top));
+        expect(rect('table-seat-0').bottom, lessThan(rect('table-hand').top));
+        expect(tester.takeException(), isNull);
+        call.videos.clear();
+        call.connected = false;
+        call.notifyListeners();
+        await tester.pump();
+        expect(avatar(1).portrait, isFalse);
+        expect(avatar(1).size, const Size.square(46));
+        final ownAvatar = find.byKey(const ValueKey('seat-call-control-0'));
+        await tester.ensureVisible(ownAvatar);
+        await tester.tap(ownAvatar);
+        await tester.pumpAndSettle();
+        expect(find.text('Camera on'), findsOneWidget);
+        expect(find.byType(TableCallButton), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+        call.dispose();
+        await call.leave();
       },
     );
   }
@@ -815,27 +1100,44 @@ void main() {
     );
     expect(tester.getCenter(wins).dx, closeTo(tester.getCenter(avatar).dx, .1));
     await tester.pump(const Duration(seconds: 2));
-    final ring =
+    final sweep =
         tester
                 .widget<CustomPaint>(
                   find.byKey(const ValueKey('own-turn-progress')),
                 )
                 .painter!
-            as FrameCountdownPainter;
-    expect(ring.progress, closeTo(2 / 3, .03));
-    expect(ring.color, const Color(0xffd5fff6));
+            as AvatarCooldownPainter;
+    expect(sweep.progress, closeTo(2 / 3, .03));
+    expect(sweep.color, const Color(0xffd5fff6));
     expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-    'one tap flies from hand towards centre before network response',
+    'tap selects a card and Play flies it before the network response',
     (tester) async {
       await _mount(tester, session, game);
       final handCard = find.byWidgetPredicate(
         (w) => w is CardView && w.card == 8 && w.onTap != null,
       );
-      final origin = tester.getCenter(handCard);
       await tester.tap(handCard);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(tester.widget<CardView>(handCard).selected, isTrue);
+      expect(session.client.commands, isEmpty);
+      expect(flights, findsNothing);
+      final selectedCard = find.descendant(
+        of: handCard,
+        matching: find.byType(AnimatedContainer),
+      );
+      expect(
+        tester
+            .widget<AnimatedContainer>(selectedCard)
+            .transform!
+            .getTranslation()
+            .y,
+        -12,
+      );
+      final origin = tester.getCenter(handCard);
+      await tester.tap(find.widgetWithText(FilledButton, 'Play'));
       await tester.pump();
       await tester.pump();
       expect(flights, findsOneWidget);
@@ -855,6 +1157,152 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets(
+    'tap again deselects and choosing another card replaces selection',
+    (tester) async {
+      await _mount(tester, session, game);
+      Finder card(int value) => find.byWidgetPredicate(
+        (w) => w is CardView && w.card == value && w.onTap != null,
+      );
+      await tester.tap(card(8));
+      await tester.pump();
+      await tester.tap(card(8));
+      await tester.pump();
+      expect(tester.widget<CardView>(card(8)).selected, isFalse);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Play'))
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(card(8));
+      await tester.pump();
+      await tester.tap(card(9));
+      await tester.pump();
+      expect(tester.widget<CardView>(card(8)).selected, isFalse);
+      expect(tester.widget<CardView>(card(9)).selected, isTrue);
+      expect(session.client.commands, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets('short drags and cancellation return the card without playing', (
+    tester,
+  ) async {
+    await _mount(tester, session, game);
+    final card = find.byKey(const ValueKey('hand-card-8'));
+    final origin = tester.getCenter(card);
+    await tester.drag(card, const Offset(0, -40));
+    await tester.pump();
+    expect(session.client.commands, isEmpty);
+    await tester.drag(card, const Offset(100, 0));
+    await tester.drag(card, const Offset(0, 100));
+    await tester.pump();
+    expect(session.client.commands, isEmpty);
+    final gesture = await tester.startGesture(origin);
+    await gesture.moveBy(const Offset(0, -120));
+    await tester.pump();
+    expect(session.client.commands, isEmpty);
+    await gesture.cancel();
+    await tester.pump();
+    expect(session.client.commands, isEmpty);
+    expect(game.displayHand, contains(8));
+    expect(flights, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('upward drag plays on release and pending blocks a second play', (
+    tester,
+  ) async {
+    await _mount(tester, session, game);
+    final card = find.byKey(const ValueKey('hand-card-8'));
+    final origin = tester.getCenter(card);
+    final gesture = await tester.startGesture(origin);
+    await gesture.moveBy(const Offset(0, -120));
+    await tester.pump();
+    expect(session.client.commands, isEmpty);
+    await gesture.up();
+    await tester.pump();
+    await tester.pump();
+    expect(session.client.commands, ['play_card']);
+    expect(game.displayHand, isNot(contains(8)));
+    expect(flights, findsOneWidget);
+    expect(tester.getCenter(flights).dy, closeTo(origin.dy - 120, 4));
+    await tester.drag(
+      find.byKey(const ValueKey('hand-card-9')),
+      const Offset(0, -120),
+    );
+    await tester.pump();
+    expect(session.client.commands, hasLength(1));
+    session.client.requests.single.completeError(NetException('illegal_card'));
+    await tester.pumpAndSettle();
+    expect(game.displayHand, contains(8));
+    expect(game.playPending, isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  for (final (type, command) in [
+    ('mongol13', 'play_card'),
+    ('durak', 'durak_action'),
+    ('thousand', 'thousand_action'),
+  ]) {
+    testWidgets('$type dragging shares the normal play action', (tester) async {
+      game.gameType = type;
+      game.hand = [8, 24, 9];
+      if (game.isThousand) {
+        game.hand = [9, 10, 11];
+        game.thousand = {'stage': 'play', 'contract': 100, 'bidder': 0};
+      }
+      await _mount(tester, session, game);
+      await tester.ensureVisible(find.byKey(const ValueKey('table-hand')));
+      await tester.pump();
+      final draggedCard = game.isThousand
+          ? 9
+          : game.isMongol13
+          ? 24
+          : 8;
+      if (game.isMongol13) {
+        await tester.tap(find.byKey(const ValueKey('hand-card-8')));
+        await tester.pump();
+        await tester.tap(find.byKey(const ValueKey('hand-card-24')));
+        await tester.pump();
+        expect(session.client.commands, isEmpty);
+      }
+      await tester.drag(
+        find.byKey(ValueKey('hand-card-$draggedCard')),
+        const Offset(0, -120),
+      );
+      await tester.pump();
+      expect(session.client.commands, [command]);
+      expect(game.displayHand, isNot(contains(draggedCard)));
+      if (game.isMongol13) {
+        expect(game.displayHand, [9]);
+        expect(game.displayTrick, hasLength(2));
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets('losing the turn during a drag cannot submit a card', (
+    tester,
+  ) async {
+    await _mount(tester, session, game);
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('hand-card-8'))),
+    );
+    await gesture.moveBy(const Offset(0, -120));
+    await tester.pump();
+    game.turn = 1;
+    game.notifyListeners();
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    expect(session.client.commands, isEmpty);
+    expect(game.displayHand, contains(8));
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('fast rejection reverses in-flight card and shows a reason', (
     tester,

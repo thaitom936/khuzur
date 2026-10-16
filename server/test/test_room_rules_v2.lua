@@ -22,7 +22,7 @@ package.preload['skynet'] = function()
   return {
     start=function(fn) fn() end, dispatch=function(_, fn) dispatch=fn end,
     retpack=function(...) result=table.pack(...) end, getenv=function() return nil end,
-    send=function(_, _, cmd, _, msg) if cmd=='push' then messages[#messages+1]=msg end end,
+    send=function(_, _, cmd, fd, msg) if cmd=='push' then messages[#messages+1]={msg=msg,fd=fd} end end,
     call=function() return true end, self=function() return 99 end,
     now=function() return 0 end,
     timeout=function(_, fn) timers[#timers+1]=fn end, exit=function() end,
@@ -31,8 +31,11 @@ end
 local function call(cmd, ...)
   dispatch(0, 0, cmd, ...); return table.unpack(result, 1, result.n)
 end
-local function latest(kind)
-  for i=#messages,1,-1 do if messages[i].push==kind then return messages[i] end end
+local function latest(kind, fd)
+  for i=#messages,1,-1 do
+    local m=messages[i]
+    if m.msg.push==kind and (not fd or m.fd==fd) then return m.msg end
+  end
 end
 dofile('service/room.lua')
 call('init',{mode='friend',code='rules-test',size=3,players={
@@ -55,7 +58,7 @@ for round=1,3 do
   for _,fn in ipairs(pending) do if deals==round then fn() end end
   assert(deals==round+1)
 end
-assert(latest('turn').can_pass==false, 'fourth-round pass must be disabled')
+assert(latest('turn',12).can_pass==false, 'fourth-round pass must be disabled')
 call('rejoin',2,22,22)
 assert(latest('snapshot').can_pass==false, 'reconnect must retain forced participation')
 local ok,err=call('action',2,{cmd='decide',play=false})

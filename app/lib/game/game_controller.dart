@@ -56,6 +56,9 @@ abstract class GameController extends ChangeNotifier {
   int get turn;
   int get trumpCard;
 
+  /// The original face-up card remains visible after the dealer takes it.
+  int get trumpIndicatorCard => trumpCard;
+
   /// Trump suit is fixed at the deal, even when the face-up card is traded.
   int get trumpSuit => suitOf(trumpCard);
   bool get trumpTaken => false;
@@ -70,6 +73,7 @@ abstract class GameController extends ChangeNotifier {
   List<int> legalCards();
 
   bool get humanTurn;
+  bool get simultaneousDecisions => false;
   bool get passAllowed;
   int get maxExchangeNow;
   List<int>? get winners;
@@ -80,6 +84,7 @@ abstract class GameController extends ChangeNotifier {
 
   /// When the current turn times out, or null (local play has no clock).
   DateTime? get turnDeadline;
+  Duration? get turnDuration => null;
 
   /// Local games show a "next round" button; online rounds auto-advance.
   bool get isLocal;

@@ -27,8 +27,8 @@ redis_host = "127.0.0.1"
 redis_port = 6379
 redis_db = 1
 
--- gameplay timeouts, in centiseconds
-timeout_decide = 1000
+-- Human action countdowns: 15 seconds (1500 centiseconds) in every phase.
+timeout_decide = 1500
 timeout_exchange = 1500
 timeout_play = 1500
 bot_delay = 300

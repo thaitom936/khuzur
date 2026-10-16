@@ -9,11 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../chat/chat_screen.dart';
 import '../game/remote_game.dart';
 import '../l10n/strings.dart';
 import '../net/net_client.dart';
 import '../net/session.dart';
 import '../settings/settings.dart';
+import '../style/lobby_input_dialog.dart';
+import '../style/lobby_theme.dart';
 import '../style/my_button.dart';
 import '../style/player_avatar.dart';
 import 'lobby_widgets.dart';
@@ -25,7 +28,7 @@ class OnlineScreen extends StatefulWidget {
   State<OnlineScreen> createState() => _OnlineScreenState();
 }
 
-enum _LobbyState { lobby, queueing, waitingRoom }
+enum _LobbyState { lobby, queueing }
 
 class _OnlineScreenState extends State<OnlineScreen> {
   _LobbyState _state = _LobbyState.lobby;
@@ -33,7 +36,10 @@ class _OnlineScreenState extends State<OnlineScreen> {
   RemoteGameController? _game;
   StreamSubscription? _pushSub;
   List<LobbyRoom> _rooms = [];
-  RoomFilter _filter = RoomFilter.all;
+  String _filter = 'all';
+  int _tab = 0;
+  final _visitedTabs = <int>{0};
+  final _roomScroll = ScrollController();
   bool _loadingRooms = false;
   bool _loadedRooms = false;
   bool _busy = false;
@@ -150,12 +156,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
   void _onGame() {
     final game = _game!;
     if (!mounted) return;
-    if ((game.started || game.spectating) &&
-        game.roomCode != null &&
-        game.seats.isNotEmpty) {
+    if (game.roomCode != null && game.seats.isNotEmpty) {
       GoRouter.of(context).go('/online/table');
-    } else if (game.roomCode != null && !game.started) {
-      setState(() => _state = _LobbyState.waitingRoom);
     } else {
       setState(() {
         if (_state != _LobbyState.queueing) _state = _LobbyState.lobby;
@@ -169,6 +171,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
     _pushSub?.cancel();
     _session?.removeListener(_onSessionChanged);
     _refreshTimer?.cancel();
+    _roomScroll.dispose();
     super.dispose();
   }
 
@@ -222,409 +225,356 @@ class _OnlineScreenState extends State<OnlineScreen> {
       if (gameType == 'durak') 'transfer': transfer,
       if (gameType == 'durak') 'allow_draw': allowDraw,
     });
-    _setLobbyState(_LobbyState.waitingRoom);
   });
 
   void _joinRoom(String code) => _watchRoom(code);
-
-  void _leaveRoom() => _run(() async {
-    final session = context.read<Session>();
-    await session.client.call('leave_room');
-    _game!.reset();
-    await session.refreshCoins();
-    _setLobbyState(_LobbyState.lobby);
-  });
-
-  void _startRoom() => _run(() async {
-    await context.read<Session>().client.call('start_room');
-  });
 
   @override
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
     final l = L.of(context);
     final inLobby = _state == _LobbyState.lobby;
-    final body = switch (_state) {
-      _LobbyState.lobby => _lobbyView(session, l),
-      _LobbyState.queueing => _queueView(l),
-      _LobbyState.waitingRoom => _waitingRoomView(l),
-    };
-    return Scaffold(
-      backgroundColor: lobbyBackground,
-      appBar: AppBar(
-        backgroundColor: lobbyGreen,
-        foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
-        toolbarHeight: 68,
-        title: Row(
-          children: [
-            const Icon(Icons.style_outlined, size: 25),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'MUUSHIG',
-                    style: TextStyle(
-                      fontSize: 18,
-                      letterSpacing: 2,
-                      fontWeight: FontWeight.w800,
+    final lang = ['en', 'mn', 'zh'].contains(l.lang) ? l.lang : 'en';
+    final titles = [l('lobby'), l('chat'), l('profile')];
+    return LobbyTheme(
+      child: Builder(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            title: Text(inLobby ? titles[_tab] : l('roomCode')),
+            actions: [
+              if (inLobby && _tab == 0)
+                IconButton(
+                  tooltip: l('refresh'),
+                  onPressed: session.loggedIn && !_loadingRooms
+                      ? _loadRooms
+                      : null,
+                  icon: const Icon(Icons.refresh, size: 20),
+                ),
+              if (inLobby && _tab == 1)
+                Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Center(
+                    child: Text(
+                      langNames[lang]!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                  Text(
-                    l(session.loggedIn ? 'connected' : 'reconnecting'),
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xffc3d8cd),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          if (session.user != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.toll_outlined,
-                    size: 18,
-                    color: Color(0xffe3c88d),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    '${session.user!.coins}',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-            ),
-          IconButton(
-            tooltip: l('dailyTitle'),
-            onPressed: session.loggedIn && !_busy
-                ? () => _dailySheet(session, l)
-                : null,
-            icon: const Icon(Icons.redeem_outlined),
+                ),
+            ],
           ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: SafeArea(top: false, child: body),
-      bottomNavigationBar: inLobby
-          ? NavigationBar(
-              selectedIndex: 0,
-              backgroundColor: Colors.white,
-              indicatorColor: const Color(0xffe4eee7),
-              onDestinationSelected: _busy
-                  ? null
-                  : (index) async {
-                      if (index == 2) {
-                        _profileSheet(session, l);
-                        return;
-                      }
-                      final path = switch (index) {
-                        1 => '/online/replays',
-                        _ => null,
-                      };
-                      if (path == null) return;
-                      await GoRouter.of(context).push(path);
-                      if (mounted) _loadRooms();
-                    },
-              destinations: [
-                NavigationDestination(
-                  icon: const Icon(Icons.grid_view_rounded),
-                  label: l('lobby'),
-                ),
-                // Friends is hidden for now (feature parked).
-                NavigationDestination(
-                  enabled: session.loggedIn,
-                  icon: const Icon(Icons.history),
-                  label: l('replays'),
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.person_outline),
-                  label: l('profile'),
+          body: SafeArea(
+            top: false,
+            child: Column(
+              children: [
+                if (!session.loggedIn)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: LobbyNotice(
+                      message: l(
+                        _error == null ? 'reconnecting' : 'connectionFailed',
+                      ),
+                      action: _connecting ? null : l('retry'),
+                      onAction: _connect,
+                    ),
+                  ),
+                if (_error != null && session.loggedIn)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: LobbyNotice(
+                      message: l.error(_error!),
+                      action: l('dismiss'),
+                      onAction: () => setState(() => _error = null),
+                    ),
+                  ),
+                Expanded(
+                  child: switch (_state) {
+                    _LobbyState.queueing => _queueView(l),
+                    _LobbyState.lobby => IndexedStack(
+                      index: _tab,
+                      children: [
+                        _lobbyView(session, l),
+                        if (_visitedTabs.contains(1))
+                          ChatScreen(
+                            key: ValueKey('lobby-chat-$lang'),
+                            channel: 'lobby:$lang',
+                            title: l('chat'),
+                            embedded: true,
+                            active: _tab == 1,
+                          )
+                        else
+                          const SizedBox.shrink(),
+                        _profileView(session, l),
+                      ],
+                    ),
+                  },
                 ),
               ],
-            )
-          : null,
+            ),
+          ),
+          bottomNavigationBar: inLobby
+              ? NavigationBar(
+                  selectedIndex: _tab,
+                  onDestinationSelected: (index) {
+                    FocusScope.of(context).unfocus();
+                    setState(() {
+                      _tab = index;
+                      _visitedTabs.add(index);
+                    });
+                    if (index == 0 && session.loggedIn) _loadRooms();
+                  },
+                  destinations: [
+                    NavigationDestination(
+                      icon: const Icon(Icons.grid_view_rounded),
+                      label: l('lobby'),
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: l('chat'),
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.person_outline),
+                      label: l('profile'),
+                    ),
+                  ],
+                )
+              : null,
+        ),
+      ),
     );
   }
 
   Widget _lobbyView(Session session, L l) {
-    final rooms = _rooms.where((room) => room.matches(_filter)).toList();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide =
-            constraints.maxWidth >= 760 &&
-            MediaQuery.textScalerOf(context).scale(1) < 1.4;
-        final compact = constraints.maxHeight < 450;
-        final columns = wide ? 2 : 1;
-        final inset = constraints.maxWidth > 1160
-            ? (constraints.maxWidth - 1120) / 2
-            : 16.0;
-        return RefreshIndicator(
-          onRefresh: session.loggedIn ? _loadRooms : _connect,
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(inset, compact ? 8 : 18, inset, 0),
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  l('lobbyTitle'),
-                                  style: const TextStyle(
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.w800,
-                                    color: lobbyGreen,
-                                    letterSpacing: -0.7,
-                                  ),
+    final rooms = _rooms
+        .where((room) => _filter == 'all' || room.gameType == _filter)
+        .toList();
+    return Column(
+      children: [
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final columns =
+                  constraints.maxWidth >= 760 &&
+                      MediaQuery.textScalerOf(context).scale(1) < 1.4
+                  ? 2
+                  : 1;
+              final inset = constraints.maxWidth > 1160
+                  ? (constraints.maxWidth - 1120) / 2
+                  : 16.0;
+              return RefreshIndicator(
+                onRefresh: session.loggedIn ? _loadRooms : _connect,
+                child: CustomScrollView(
+                  key: const PageStorageKey('lobby-rooms'),
+                  controller: _roomScroll,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(inset, 0, inset, 16),
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_game?.roomCode != null && !_game!.gameOver)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: FilledButton.tonalIcon(
+                                  onPressed: () =>
+                                      GoRouter.of(context).go('/online/table'),
+                                  icon: const Icon(Icons.undo),
+                                  label: Text(l('returnTable')),
                                 ),
-                                const SizedBox(height: 3),
-                                if (!compact)
-                                  Text(
-                                    l('lobbySubtitle'),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: lobbyMuted,
+                              ),
+                            Row(
+                              spacing: 4,
+                              children: [
+                                for (final game in {
+                                  'all': l('allTables'),
+                                  'muushig': 'Muushig',
+                                  'mongol13': 'Mongol 13',
+                                  'durak': 'Durak',
+                                  'thousand': 'Thousand',
+                                }.entries)
+                                  Expanded(
+                                    child: Tooltip(
+                                      message: game.value,
+                                      child: ChoiceChip(
+                                        key: ValueKey(
+                                          'game-filter-${game.key}',
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        labelPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 3,
+                                            ),
+                                        label: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            game.value,
+                                            maxLines: 1,
+                                            softWrap: false,
+                                          ),
+                                        ),
+                                        selected: _filter == game.key,
+                                        showCheckmark: false,
+                                        labelStyle: TextStyle(
+                                          fontSize: 12,
+                                          color: _filter == game.key
+                                              ? Theme.of(
+                                                  context,
+                                                ).colorScheme.onPrimary
+                                              : Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                        ),
+                                        onSelected: (_) {
+                                          setState(() => _filter = game.key);
+                                          if (_roomScroll.hasClients) {
+                                            _roomScroll.jumpTo(0);
+                                          }
+                                        },
+                                      ),
                                     ),
                                   ),
                               ],
                             ),
-                          ),
-                          IconButton(
-                            tooltip: l('play'),
-                            onPressed: _busy
-                                ? null
-                                : () => GoRouter.of(context).push('/play'),
-                            icon: const Icon(
-                              Icons.school_outlined,
-                              color: lobbyGreen,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: compact ? 4 : 16),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 460),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: session.loggedIn && !_busy
-                                    ? () => _sizeDialog(l)
-                                    : null,
-                                icon: const Icon(Icons.add, size: 18),
-                                label: Text(l('createRoom')),
+                            if (_roomsError != null && session.loggedIn) ...[
+                              const SizedBox(height: 12),
+                              LobbyNotice(
+                                message: l('roomsFailed'),
+                                action: l('retry'),
+                                onAction: _loadingRooms ? null : _loadRooms,
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: TextButton.icon(
-                                onPressed: session.loggedIn && !_busy
-                                    ? () => _joinDialog(l)
-                                    : null,
-                                icon: const Icon(Icons.tag, size: 18),
-                                label: Text(l('joinByCode')),
-                              ),
-                            ),
+                            ],
+                            if (_busy)
+                              const LinearProgressIndicator(minHeight: 2),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            for (final filter in RoomFilter.values)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(
-                                    l(switch (filter) {
-                                      RoomFilter.all => 'allTables',
-                                      RoomFilter.available => 'availableTables',
-                                      RoomFilter.waiting => 'waitingStatus',
-                                      RoomFilter.playing => 'playingStatus',
-                                    }),
+                    ),
+                    if (rooms.isNotEmpty)
+                      SliverPadding(
+                        padding: EdgeInsets.symmetric(horizontal: inset),
+                        sliver: SliverList.builder(
+                          itemCount: (rooms.length / columns).ceil(),
+                          itemBuilder: (context, row) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (var col = 0; col < columns; col++) ...[
+                                  if (col > 0) const SizedBox(width: 14),
+                                  Expanded(
+                                    child: row * columns + col < rooms.length
+                                        ? LobbyRoomCard(
+                                            key: ValueKey(
+                                              rooms[row * columns + col].code,
+                                            ),
+                                            room: rooms[row * columns + col],
+                                            l: l,
+                                            enabled: session.loggedIn && !_busy,
+                                            onJoin: () => _watchRoom(
+                                              rooms[row * columns + col].code,
+                                            ),
+                                          )
+                                        : const SizedBox.shrink(),
                                   ),
-                                  selected: _filter == filter,
-                                  onSelected: (_) =>
-                                      setState(() => _filter = filter),
-                                  showCheckmark: false,
-                                  selectedColor: const Color(0xffdce9df),
-                                  side: BorderSide.none,
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (rooms.isEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(inset, 24, inset, 24),
+                          child: Column(
+                            children: [
+                              if (session.loggedIn &&
+                                  _loadingRooms &&
+                                  !_loadedRooms)
+                                const CircularProgressIndicator()
+                              else
+                                Icon(
+                                  Icons.layers_outlined,
+                                  size: 32,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${l('rooms')} · ${rooms.length}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: lobbyMuted,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          if (_loadingRooms)
-                            Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  semanticsLabel: l('loadingRooms'),
+                              const SizedBox(height: 12),
+                              Text(
+                                l(
+                                  !session.loggedIn
+                                      ? 'connectionHint'
+                                      : _loadingRooms && !_loadedRooms
+                                      ? 'loadingRooms'
+                                      : _roomsError != null
+                                      ? 'roomsFailed'
+                                      : _filter == 'all'
+                                      ? 'noRooms'
+                                      : 'noMatchingRooms',
                                 ),
+                                textAlign: TextAlign.center,
                               ),
-                            )
-                          else
-                            IconButton(
-                              tooltip: l('refresh'),
-                              onPressed: session.loggedIn ? _loadRooms : null,
-                              icon: const Icon(Icons.refresh, size: 20),
-                            ),
-                        ],
+                              const SizedBox(height: 12),
+                              if (_filter != 'all' && _loadedRooms)
+                                TextButton(
+                                  onPressed: () =>
+                                      setState(() => _filter = 'all'),
+                                  child: Text(l('showAllRooms')),
+                                )
+                              else if (!session.loggedIn)
+                                TextButton.icon(
+                                  onPressed: () =>
+                                      GoRouter.of(context).push('/play'),
+                                  icon: const Icon(Icons.school_outlined),
+                                  label: Text(l('play')),
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
-                      if (!session.loggedIn)
-                        LobbyNotice(
-                          message: l(
-                            _error == null ? 'connecting' : 'connectionFailed',
-                          ),
-                          action: _connecting ? null : l('retry'),
-                          onAction: _connect,
-                        ),
-                      if (_error != null && session.loggedIn)
-                        LobbyNotice(
-                          message: l.error(_error!),
-                          action: l('dismiss'),
-                          onAction: () => setState(() => _error = null),
-                        ),
-                      if (_roomsError != null && session.loggedIn)
-                        LobbyNotice(
-                          message: l('roomsFailed'),
-                          action: l('retry'),
-                          onAction: _loadingRooms ? null : _loadRooms,
-                        ),
-                      if (_busy) const LinearProgressIndicator(minHeight: 2),
-                    ],
-                  ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                  ],
                 ),
-              ),
-              if (rooms.isNotEmpty)
-                SliverPadding(
-                  padding: EdgeInsets.symmetric(horizontal: inset),
-                  sliver: SliverList.builder(
-                    itemCount: (rooms.length / columns).ceil(),
-                    itemBuilder: (context, row) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (var col = 0; col < columns; col++) ...[
-                            if (col > 0) const SizedBox(width: 14),
-                            Expanded(
-                              child: row * columns + col < rooms.length
-                                  ? LobbyRoomCard(
-                                      key: ValueKey(
-                                        rooms[row * columns + col].code,
-                                      ),
-                                      room: rooms[row * columns + col],
-                                      l: l,
-                                      enabled: session.loggedIn && !_busy,
-                                      onJoin: () => _watchRoom(
-                                        rooms[row * columns + col].code,
-                                      ),
-                                    )
-                                  : const SizedBox.shrink(),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              if (rooms.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(inset, 22, inset, 28),
-                    child: Column(
-                      children: [
-                        Icon(
-                          _loadingRooms || !_loadedRooms
-                              ? Icons.style_outlined
-                              : Icons.search_off,
-                          size: 36,
-                          color: lobbyMuted,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          l(
-                            !session.loggedIn
-                                ? 'connectionHint'
-                                : _loadingRooms
-                                ? 'loadingRooms'
-                                : _roomsError != null
-                                ? 'roomsFailed'
-                                : _filter == RoomFilter.all
-                                ? 'noRooms'
-                                : 'noMatchingRooms',
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                        if (_filter != RoomFilter.all && _loadedRooms)
-                          TextButton(
-                            onPressed: () =>
-                                setState(() => _filter = RoomFilter.all),
-                            child: Text(l('showAllRooms')),
-                          )
-                        else if (!session.loggedIn)
-                          OutlinedButton.icon(
-                            onPressed: () => GoRouter.of(context).push('/play'),
-                            icon: const Icon(Icons.school_outlined),
-                            label: Text(l('play')),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 20),
-                  child: Center(
-                    child: TextButton.icon(
-                      onPressed: session.loggedIn
-                          ? () => GoRouter.of(context).push('/online/rank')
-                          : null,
-                      icon: const Icon(Icons.emoji_events_outlined, size: 18),
-                      label: Text(l('leaderboard')),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+              );
+            },
           ),
-        );
-      },
+        ),
+        Material(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: session.loggedIn && !_busy
+                        ? () => _sizeDialog(l)
+                        : null,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: Text(l('createRoom')),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: session.loggedIn && !_busy
+                        ? () => _joinDialog(l)
+                        : null,
+                    icon: const Icon(Icons.tag, size: 18),
+                    label: Text(l('joinByCode')),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -646,147 +596,147 @@ class _OnlineScreenState extends State<OnlineScreen> {
     );
   }
 
-  Widget _waitingRoomView(L l) {
-    final game = _game!;
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '${game.locked ? '🔒 ' : ''}${l('roomCode')}: '
-            '${game.roomCode ?? '…'}',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          if (game.isMongol13) const Text('Mongol 13'),
-          if (game.isDurak) const Text('Durak'),
-          if (game.stake > 0) Text('${l('stake')}: ${game.stake}'),
-          const SizedBox(height: 12),
-          for (final s in game.seats) Text(s.name),
-          Text('${game.seats.length} / ${game.numPlayers}'),
-          const SizedBox(height: 16),
-          Text(l('waitingFriends')),
-          const SizedBox(height: 16),
-          MyButton(
-            onPressed: () => _inviteSheet(l),
-            child: Text(l('inviteFriends')),
-          ),
-          const SizedBox(height: 12),
-          if (!(game.isMongol13 || game.isDurak) ||
-              (game.humanSeat == 0 && game.seats.length >= 2))
-            MyButton(
-              onPressed: _startRoom,
-              child: Text(
-                l(game.isMongol13 || game.isDurak ? 'm13Start' : 'startNow'),
-              ),
-            ),
-          const SizedBox(height: 12),
-          MyButton(onPressed: _leaveRoom, child: Text(l('cancel'))),
-        ],
-      ),
-    );
-  }
-
   // ---- dialogs & sheets ----
 
-  void _profileSheet(Session session, L l) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: PlayerAvatar(name: session.user?.name ?? ''),
-                  title: Text(session.user?.name ?? l('profile')),
-                  subtitle: session.user == null
-                      ? null
-                      : Text(
-                          'Lv${session.user!.level} · ${l('points')}: ${session.user!.rating}\n'
-                          '${l('games')}: ${session.user!.games} · ${l('wins')}: ${session.user!.wins}',
-                        ),
-                  trailing: session.loggedIn
-                      ? IconButton(
-                          tooltip: l('yourName'),
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: () {
-                            Navigator.pop(sheetContext);
-                            _renameDialog(session, l);
-                          },
-                        )
-                      : null,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.settings_outlined),
-                  title: Text(l('settings')),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    GoRouter.of(context).push('/settings');
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.school_outlined),
-                  title: Text(l('play')),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    GoRouter.of(context).push('/play');
-                  },
-                ),
-              ],
-            ),
+  Widget _profileView(Session session, L l) => ListView(
+    key: const PageStorageKey('lobby-profile'),
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+    children: [
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  PlayerAvatar(name: session.user?.name ?? '', size: 40),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      session.user?.name ?? l('profile'),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: l('yourName'),
+                    onPressed: session.loggedIn
+                        ? () => _renameDialog(session, l)
+                        : null,
+                    icon: const Icon(Icons.edit_outlined, size: 20),
+                  ),
+                ],
+              ),
+              const Divider(height: 32),
+              Row(
+                children: [
+                  const Icon(Icons.toll_outlined, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(l('coins'))),
+                  Text(
+                    '${session.user?.coins ?? 0}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
-    );
-  }
-
-  void _renameDialog(Session session, L l) {
-    final controller = TextEditingController(text: session.user!.name);
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l('yourName')),
-        content: TextField(controller: controller, maxLength: 24),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l('cancel')),
-          ),
-          TextButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                _run(() => session.setName(name));
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('OK'),
-          ),
-        ],
+      const SizedBox(height: 16),
+      Card(
+        child: Column(
+          children: [
+            _profileLink(
+              Icons.history,
+              l('replays'),
+              session.loggedIn
+                  ? () => GoRouter.of(context).push('/online/replays')
+                  : null,
+            ),
+            _profileLink(
+              Icons.redeem_outlined,
+              l('dailyTitle'),
+              session.loggedIn && !_busy ? () => _dailySheet(session, l) : null,
+            ),
+            _profileLink(
+              Icons.emoji_events_outlined,
+              l('leaderboard'),
+              session.loggedIn
+                  ? () => GoRouter.of(context).push('/online/rank')
+                  : null,
+            ),
+            _profileLink(
+              Icons.settings_outlined,
+              l('settings'),
+              () => GoRouter.of(context).push('/settings'),
+            ),
+            _profileLink(
+              Icons.school_outlined,
+              l('play'),
+              () => GoRouter.of(context).push('/play'),
+            ),
+          ],
+        ),
       ),
+    ],
+  );
+
+  Widget _profileLink(IconData icon, String title, VoidCallback? onTap) =>
+      ListTile(
+        leading: Icon(icon, size: 20),
+        title: Text(title),
+        trailing: const Icon(Icons.chevron_right, size: 20),
+        onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      );
+
+  Future<void> _renameDialog(Session session, L l) async {
+    final values = await showLobbyInputs(
+      context: context,
+      title: l('yourName'),
+      confirm: 'OK',
+      cancel: l('cancel'),
+      fields: [
+        LobbyInput(
+          label: l('yourName'),
+          value: session.user!.name,
+          maxLength: 24,
+        ),
+      ],
     );
+    if (values != null && values.first.isNotEmpty && mounted) {
+      await _run(() => session.setName(values.first));
+    }
   }
 
   void _sizeDialog(L l) {
-    var locked = false;
-    var gameType = 'muushig';
+    var locked = true;
+    var gameType = _filter == 'all' ? 'muushig' : _filter;
     var deckSize = 36;
     var transfer = false;
     var allowDraw = true;
-    showDialog<void>(
+    var size = gameType == 'thousand' ? 3 : 2;
+    int maximum() => switch (gameType) {
+      'thousand' => 3,
+      'durak' => deckSize == 24 ? 4 : 6,
+      'mongol13' => 4,
+      _ => 5,
+    };
+    showLobbyDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialog) => AlertDialog(
-          title: Text(l('players')),
+          title: Text(l('createRoom')),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Wrap(
                   spacing: 6,
@@ -801,13 +751,75 @@ class _OnlineScreenState extends State<OnlineScreen> {
                       ChoiceChip(
                         label: Text(entry.value),
                         selected: gameType == entry.key,
-                        onSelected: (_) =>
-                            setDialog(() => gameType = entry.key),
+                        showCheckmark: false,
+                        labelStyle: TextStyle(
+                          color: gameType == entry.key
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : null,
+                        ),
+                        onSelected: (_) => setDialog(() {
+                          gameType = entry.key;
+                          size = gameType == 'thousand'
+                              ? 3
+                              : size.clamp(2, maximum());
+                        }),
                       ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
+                Text(l('roomVisibility')),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final private in [false, true])
+                      ChoiceChip(
+                        label: Text(l(private ? 'inviteRoom' : 'publicRoom')),
+                        selected: locked == private,
+                        showCheckmark: false,
+                        labelStyle: TextStyle(
+                          color: locked == private
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : null,
+                        ),
+                        onSelected: (_) => setDialog(() => locked = private),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  l(locked ? 'lockedHint' : 'publicRoomHint'),
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                Text(l('players')),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (
+                      var n = gameType == 'thousand' ? 3 : 2;
+                      n <= maximum();
+                      n++
+                    )
+                      ChoiceChip(
+                        key: ValueKey('create-seats-$n'),
+                        label: Text('$n'),
+                        selected: size == n,
+                        showCheckmark: false,
+                        labelStyle: TextStyle(
+                          color: size == n
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : null,
+                        ),
+                        onSelected: (_) => setDialog(() => size = n),
+                      ),
+                  ],
+                ),
                 if (gameType == 'durak') ...[
+                  const SizedBox(height: 16),
                   DropdownButtonFormField<int>(
                     initialValue: deckSize,
                     decoration: InputDecoration(labelText: l('durakDeck')),
@@ -815,110 +827,78 @@ class _OnlineScreenState extends State<OnlineScreen> {
                       for (final n in [24, 36, 52])
                         DropdownMenuItem(value: n, child: Text('$n')),
                     ],
-                    onChanged: (n) => setDialog(() => deckSize = n ?? 36),
+                    onChanged: (n) => setDialog(() {
+                      deckSize = n ?? 36;
+                      size = size.clamp(2, maximum());
+                    }),
                   ),
                   SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
                     dense: true,
                     title: Text(l('durakTransferMode')),
                     value: transfer,
                     onChanged: (v) => setDialog(() => transfer = v),
                   ),
                   SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
                     dense: true,
                     title: Text(l('durakAllowDraw')),
                     value: allowDraw,
                     onChanged: (v) => setDialog(() => allowDraw = v),
                   ),
                 ],
-                Wrap(
-                  alignment: WrapAlignment.spaceEvenly,
-                  children: [
-                    for (
-                      var n = gameType == 'thousand' ? 3 : 2;
-                      n <=
-                          (gameType == 'thousand'
-                              ? 3
-                              : gameType == 'durak'
-                              ? (deckSize == 24 ? 4 : 6)
-                              : gameType == 'mongol13'
-                              ? 4
-                              : 5);
-                      n++
-                    )
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          // Coin tables are off for now: stake is always 0.
-                          _createRoom(
-                            n,
-                            0,
-                            gameType != 'muushig' || locked,
-                            gameType,
-                            deckSize,
-                            transfer,
-                            allowDraw,
-                          );
-                        },
-                        child: Text('$n'),
-                      ),
-                  ],
-                ),
-                if (gameType == 'thousand')
-                  Text(l('thousandFriendHint'))
-                else if (gameType == 'durak')
-                  Text(l('durakFriendHint'))
-                else if (gameType == 'mongol13')
-                  Text(l('m13FriendHint'))
-                else
-                  SwitchListTile(
-                    dense: true,
-                    title: Text(l('lockedRoom')),
-                    subtitle: Text(
-                      l('lockedHint'),
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                    value: locked,
-                    onChanged: (v) => setDialog(() => locked = v),
-                  ),
               ],
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(l('cancel')),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _createRoom(
+                  size,
+                  0,
+                  locked,
+                  gameType,
+                  deckSize,
+                  transfer,
+                  allowDraw,
+                );
+              },
+              child: Text(l('createAndEnter')),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  void _joinDialog(L l) {
-    final controller = TextEditingController();
-    showDialog<void>(
+  Future<void> _joinDialog(L l) async {
+    final values = await showLobbyInputs(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l('roomCode')),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
+      title: l('roomCode'),
+      confirm: l('join'),
+      cancel: l('cancel'),
+      fields: [
+        LobbyInput(
+          label: l('roomCode'),
           maxLength: 6,
+          keyboard: TextInputType.number,
+          validator: (value) => RegExp(r'^\d{6}$').hasMatch(value?.trim() ?? '')
+              ? null
+              : l('roomCodeInvalid'),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l('cancel')),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _joinRoom(controller.text.trim());
-            },
-            child: Text(l('join')),
-          ),
-        ],
-      ),
+      ],
     );
+    if (values != null && mounted) _joinRoom(values.first);
   }
 
   void _inviteDialog(Map<String, dynamic> msg) {
     final l = L(context.read<SettingsController>().lang.value);
-    showDialog<void>(
+    showLobbyDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(l.fmt('inviteFrom', '${msg['from'] ?? '?'}')),
@@ -1016,53 +996,6 @@ class _OnlineScreenState extends State<OnlineScreen> {
             ),
           );
         },
-      ),
-    );
-  }
-
-  Future<void> _inviteSheet(L l) async {
-    final session = context.read<Session>();
-    List<Map<String, dynamic>> friends;
-    try {
-      final resp = await session.client.call('friends');
-      friends = (resp['friends'] as List? ?? [])
-          .cast<Map<String, dynamic>>()
-          .where((f) => f['online'] == true)
-          .toList();
-    } on NetException catch (e) {
-      setState(() => _error = e.code);
-      return;
-    }
-    if (!mounted) return;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: friends.isEmpty
-            ? Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(l.error('friend_offline')),
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final f in friends)
-                    ListTile(
-                      title: Text(f['name'] as String),
-                      trailing: TextButton(
-                        onPressed: () {
-                          session.client
-                              .call('invite', {'uid': f['uid']})
-                              .catchError((Object e) {
-                                return <String, dynamic>{};
-                              });
-                          Navigator.pop(context);
-                        },
-                        child: Text(l('invite')),
-                      ),
-                    ),
-                ],
-              ),
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../style/player_avatar.dart';
@@ -8,6 +10,7 @@ class TurnCountdownAvatar extends StatefulWidget {
   final String name;
   final bool active;
   final DateTime? deadline;
+  final Duration? duration;
   final String turnLabel;
   final Widget? avatar;
   final Size? frameSize;
@@ -16,6 +19,7 @@ class TurnCountdownAvatar extends StatefulWidget {
     required this.name,
     required this.active,
     required this.deadline,
+    this.duration,
     required this.turnLabel,
     this.avatar,
     this.frameSize,
@@ -55,7 +59,9 @@ class _TurnCountdownAvatarState extends State<TurnCountdownAvatar>
   @override
   void didUpdateWidget(TurnCountdownAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final changed = oldWidget.deadline != widget.deadline;
+    final changed =
+        oldWidget.deadline != widget.deadline ||
+        oldWidget.duration != widget.duration;
     if (changed || oldWidget.active != widget.active) {
       _sync(newDeadline: changed);
     }
@@ -64,7 +70,7 @@ class _TurnCountdownAvatarState extends State<TurnCountdownAvatar>
   void _sync({bool newDeadline = false}) {
     _clock.stop();
     final remaining = widget.deadline?.difference(DateTime.now());
-    if (newDeadline) _window = remaining ?? Duration.zero;
+    if (newDeadline) _window = widget.duration ?? remaining ?? Duration.zero;
     if (!widget.active) return;
     if (remaining != null) {
       if (remaining <= Duration.zero || _window <= Duration.zero) {
@@ -113,12 +119,16 @@ class _TurnCountdownAvatarState extends State<TurnCountdownAvatar>
                 if (widget.active)
                   Positioned.fill(
                     child: IgnorePointer(
-                      child: CustomPaint(
-                        key: const ValueKey('own-turn-progress'),
-                        painter: FrameCountdownPainter(
-                          progress: timed ? _clock.value : .75,
-                          offset: timed || _reduced ? 0 : _clock.value,
-                          color: color,
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: CustomPaint(
+                          key: const ValueKey('own-turn-progress'),
+                          painter: AvatarCooldownPainter(
+                            progress: timed ? _clock.value : .75,
+                            offset: timed || _reduced ? 0 : _clock.value,
+                            color: color,
+                            circular: false,
+                          ),
                         ),
                       ),
                     ),
@@ -166,26 +176,24 @@ class _TurnCountdownAvatarState extends State<TurnCountdownAvatar>
           child: Stack(
             alignment: Alignment.topCenter,
             children: [
+              Padding(padding: const EdgeInsets.all(6), child: child),
               if (widget.active)
                 Positioned(
-                  top: 0,
-                  child: SizedBox(
-                    width: 58,
-                    height: 58,
-                    child: Transform.rotate(
-                      angle: !timed && !_reduced ? _clock.value * 12.566 : 0,
-                      child: CircularProgressIndicator(
-                        key: const ValueKey('own-turn-progress'),
-                        value: timed ? _clock.value : .75,
-                        strokeWidth: 3,
-                        strokeCap: StrokeCap.round,
-                        backgroundColor: Colors.white24,
+                  top: 6,
+                  left: 6,
+                  width: 46,
+                  height: 46,
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      key: const ValueKey('own-turn-progress'),
+                      painter: AvatarCooldownPainter(
+                        progress: timed ? _clock.value : .75,
+                        offset: timed || _reduced ? 0 : _clock.value,
                         color: color,
                       ),
                     ),
                   ),
                 ),
-              Padding(padding: const EdgeInsets.all(6), child: child),
               if (widget.active && timed)
                 Positioned(
                   bottom: 0,
@@ -225,47 +233,67 @@ class _TurnCountdownAvatarState extends State<TurnCountdownAvatar>
   }
 }
 
-/// The countdown travels around the video frame; no separate highlight halo.
-class FrameCountdownPainter extends CustomPainter {
+/// A translucent radial sweep over the actual portrait, without an outer ring.
+class AvatarCooldownPainter extends CustomPainter {
   final double progress, offset;
   final Color color;
-  const FrameCountdownPainter({
+  final bool circular;
+  const AvatarCooldownPainter({
     required this.progress,
     required this.color,
     this.offset = 0,
+    this.circular = true,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(
-          (Offset.zero & size).deflate(1.5),
-          const Radius.circular(18),
-        ),
+    if (size.isEmpty) return;
+    final bounds = Offset.zero & size;
+    final clip = circular
+        ? (Path()..addOval(bounds))
+        : (Path()..addRRect(
+            RRect.fromRectAndRadius(bounds, const Radius.circular(14)),
+          ));
+    final elapsed = 1 - progress.clamp(0.0, 1.0);
+    final center = bounds.center;
+    final radius =
+        math.sqrt(size.width * size.width + size.height * size.height) / 2;
+    final start = -math.pi / 2 + offset * math.pi * 2;
+    final sweep = elapsed * math.pi * 2;
+    canvas.save();
+    canvas.clipPath(clip);
+    if (elapsed > 0) {
+      final sector = Path()
+        ..moveTo(center.dx, center.dy)
+        ..arcTo(
+          Rect.fromCircle(center: center, radius: radius),
+          start,
+          sweep,
+          false,
+        )
+        ..close();
+      canvas.drawPath(
+        sector,
+        Paint()..color = Colors.black.withValues(alpha: .38),
       );
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.white24;
-    canvas.drawPath(path, paint);
-    paint.color = color;
-    final metric = path.computeMetrics().first;
-    final start = offset * metric.length;
-    final end = start + progress.clamp(0, 1) * metric.length;
-    canvas.drawPath(
-      metric.extractPath(start, end.clamp(0, metric.length)),
-      paint,
-    );
-    if (end > metric.length) {
-      canvas.drawPath(metric.extractPath(0, end - metric.length), paint);
     }
+    if (elapsed < 1) {
+      final angle = start + sweep;
+      canvas.drawLine(
+        center,
+        center + Offset(math.cos(angle), math.sin(angle)) * radius,
+        Paint()
+          ..color = color.withValues(alpha: .8)
+          ..strokeWidth = 1.2,
+      );
+    }
+    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(FrameCountdownPainter oldDelegate) =>
+  bool shouldRepaint(AvatarCooldownPainter oldDelegate) =>
       oldDelegate.progress != progress ||
       oldDelegate.offset != offset ||
-      oldDelegate.color != color;
+      oldDelegate.color != color ||
+      oldDelegate.circular != circular;
 }

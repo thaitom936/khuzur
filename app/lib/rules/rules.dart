@@ -16,6 +16,7 @@ class RuleConfig {
 
   /// With no decide phase everyone always plays (每轮必须出牌).
   final bool decidePhase;
+  final bool simultaneousDecisions;
   final bool exchangePhase;
   final bool mustFollowSuit;
   final bool mustBeat;
@@ -31,6 +32,7 @@ class RuleConfig {
     this.startScore = 15,
     this.noTrickPenalty = 5,
     this.decidePhase = true,
+    this.simultaneousDecisions = true,
     this.exchangePhase = true,
     this.mustFollowSuit = true,
     this.mustBeat = false,
@@ -49,6 +51,8 @@ class RuleConfig {
       startScore: json['startScore'] as int? ?? def.startScore,
       noTrickPenalty: json['noTrickPenalty'] as int? ?? def.noTrickPenalty,
       decidePhase: json['decidePhase'] as bool? ?? def.decidePhase,
+      // Old replays and servers did not support concurrent decisions.
+      simultaneousDecisions: json['simultaneousDecisions'] as bool? ?? false,
       exchangePhase: json['exchangePhase'] as bool? ?? def.exchangePhase,
       mustFollowSuit: json['mustFollowSuit'] as bool? ?? def.mustFollowSuit,
       mustBeat: json['mustBeat'] as bool? ?? def.mustBeat,
@@ -157,6 +161,7 @@ class GameState {
   final int dealer;
   final List<PlayerState> players;
   int trumpCard; // may change once: the trump seven swaps with the face-up card
+  final int initialTrumpCard;
   final List<int> stock;
 
   Phase phase = Phase.deciding;
@@ -178,7 +183,8 @@ class GameState {
     required this.players,
     required this.trumpCard,
     required this.stock,
-  }) : trumpSuit = suitOf(trumpCard),
+  }) : initialTrumpCard = trumpCard,
+       trumpSuit = suitOf(trumpCard),
        turn = (dealer + 1) % numPlayers;
 
   /// Creates the state for one round from explicit cards (card strings).
@@ -295,7 +301,16 @@ class GameState {
 
   /// Phase [Phase.deciding]: choose to play (true) or pass (false).
   String? decide(int seat, bool play) {
-    final err = _checkTurn(Phase.deciding, seat);
+    final concurrent = config.rulesVersion >= 2 && config.simultaneousDecisions;
+    final err = concurrent
+        ? phase != Phase.deciding
+              ? 'wrong_phase'
+              : seat < 0 || seat >= players.length
+              ? 'not_your_turn'
+              : players[seat].decision != Decision.none
+              ? 'already_decided'
+              : null
+        : _checkTurn(Phase.deciding, seat);
     if (err != null) return err;
     final p = players[seat];
 

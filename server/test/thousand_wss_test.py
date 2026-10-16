@@ -42,7 +42,7 @@ try:
     a = players[0]
     reject(a, 'create_room', 'thousand_need_players', size=2, game_type='thousand')
     reject(a, 'create_room', 'bad_stake', size=3, game_type='thousand', stake=100)
-    code = a.call('create_room', size=3, game_type='thousand', locked=False)['code']
+    code = a.call('create_room', size=3, game_type='thousand', locked=True)['code']
     assert all(r['code'] != code for r in a.call('room_list')['rooms'])
     reject(a, 'start_room', 'thousand_need_players')
     for c in players[1:]: c.call('join_room', code=code)

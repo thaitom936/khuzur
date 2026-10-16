@@ -10,6 +10,7 @@ skynet.start(function()
 
   skynet.uniqueservice("db")
   skynet.uniqueservice("hub")
+  skynet.uniqueservice("chat")
   skynet.uniqueservice("match")
   skynet.uniqueservice("wsgate")
 

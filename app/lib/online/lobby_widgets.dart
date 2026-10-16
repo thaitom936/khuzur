@@ -15,6 +15,13 @@ class LobbyRoom {
   const LobbyRoom(this.data);
 
   String get code => data['code'] as String;
+  String get gameType => data['game_type'] as String? ?? 'muushig';
+  String get gameName => switch (gameType) {
+    'mongol13' => 'Mongol 13',
+    'durak' => 'Durak',
+    'thousand' => 'Thousand',
+    _ => 'Muushig',
+  };
   bool get started => data['started'] == true;
   int get size => data['size'] as int? ?? 0;
   int get seated => data['seated'] as int? ?? 0;
@@ -53,60 +60,75 @@ class LobbyRoomCard extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: '${l('join')} ${room.code}',
+      label: '${room.gameName} · ${l('join')} ${room.code}',
       child: Material(
         key: ValueKey('room-${room.code}'),
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: Color(0xffe0e5df)),
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: enabled ? onJoin : null,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            child: Row(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var i = 0; i < room.size; i++)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (i < names.length)
-                            PlayerAvatar(name: names[i], size: 36)
-                          else
-                            const CircleAvatar(
-                              radius: 18,
-                              backgroundColor: Color(0xffedf2ed),
-                              child: Icon(
-                                Icons.person_add_alt,
-                                size: 20,
-                                color: lobbyMuted,
-                              ),
-                            ),
-                          const SizedBox(height: 8),
-                          Tooltip(
-                            message: i < names.length
-                                ? names[i]
-                                : l('openSeat'),
-                            child: Text(
-                              i < names.length ? names[i] : l('openSeat'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                Text(
+                  room.gameName,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < room.size; i++)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (i < names.length)
+                                PlayerAvatar(name: names[i], size: 36)
+                              else
+                                const CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: Color(0xffedf2ed),
+                                  child: Icon(
+                                    Icons.person_add_alt,
+                                    size: 20,
+                                    color: lobbyMuted,
+                                  ),
+                                ),
+                              const SizedBox(height: 8),
+                              Tooltip(
+                                message: i < names.length
+                                    ? names[i]
+                                    : l('openSeat'),
+                                child: Text(
+                                  i < names.length ? names[i] : l('openSeat'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -132,17 +154,23 @@ class LobbyNotice extends StatelessWidget {
     margin: const EdgeInsets.only(bottom: 12),
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     decoration: BoxDecoration(
-      color: const Color(0xfffff2da),
+      color: Theme.of(context).colorScheme.secondaryContainer,
       borderRadius: BorderRadius.circular(12),
     ),
     child: Row(
       children: [
-        const Icon(Icons.info_outline, size: 20, color: Color(0xff79551d)),
+        Icon(
+          Icons.info_outline,
+          size: 20,
+          color: Theme.of(context).colorScheme.onSecondaryContainer,
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
             message,
-            style: const TextStyle(color: Color(0xff79551d)),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+            ),
           ),
         ),
         if (action != null)

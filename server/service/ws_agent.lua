@@ -124,6 +124,17 @@ HANDLERS.rank = authed(function(fd, c, msg)
   return skynet.call(".db", "lua", "rank_top", c.uid, msg.count)
 end)
 
+for _,command in ipairs({'club_list','club_info','club_create','club_join','club_leave','club_manage','club_invite_create','club_invite_info',
+  'chat_open','chat_history','chat_close','chat_send','chat_delete','chat_report','chat_block','chat_mute',
+  'chat_reports','chat_report_resolve','chat_media_prepare','chat_media_complete','chat_media_url'}) do
+  HANDLERS[command]=authed(function(fd,c,msg)
+    local operation=command:match('^chat_media_') and 'media' or 'request'
+    local result,err=skynet.call('.chat','lua',operation,c.uid,c.name,skynet.self(),fd,msg)
+    if conns[fd]~=c then return nil,'chat_forbidden' end
+    return result,err
+  end)
+end
+
 local function playerEntry(fd, c)
   return { uid = c.uid, name = c.name, agent = skynet.self(), fd = fd }
 end
@@ -174,6 +185,7 @@ HANDLERS.create_room = authed(function(fd, c, msg)
   if roomOf(c.uid) then return nil, "already_in_room" end
   local size = tonumber(msg.size) or 4
   local gameType = msg.game_type or "muushig"
+  if msg.locked ~= nil and type(msg.locked) ~= 'boolean' then return nil,'bad_request' end
   if gameType ~= "muushig" and gameType ~= "mongol13" and gameType ~= "durak" and gameType ~= "thousand" then return nil, "bad_game_type" end
   if gameType == "thousand" and size ~= 3 then return nil,"thousand_need_players" end
   local options
@@ -191,7 +203,7 @@ HANDLERS.create_room = authed(function(fd, c, msg)
   local ok, err = escrow(c.uid, stake)
   if not ok then return nil, err end
   local _, roomCode = skynet.call(".hub", "lua", "create_room", "friend",
-    size, { playerEntry(fd, c) }, stake, gameType ~= "muushig" or (msg.locked and true or false), nil, gameType, options)
+    size, { playerEntry(fd, c) }, stake, msg.locked == nil and gameType ~= 'muushig' or msg.locked == true, nil, gameType, options)
   return { code = roomCode }
 end)
 
@@ -243,6 +255,16 @@ HANDLERS.start_room = authed(function(fd, c, msg)
   return {}
 end)
 
+HANDLERS.dissolve_room = authed(function(fd, c, msg)
+  local room = roomOf(c.uid)
+  if not room then return nil, "not_in_room" end
+  local info = skynet.call(room, "lua", "info")
+  if tostring(msg.code) ~= tostring(info.code) then return nil, "not_in_room" end
+  local ok, err = skynet.call(room, "lua", "dissolve", c.uid)
+  if not ok then return nil, err end
+  return {}
+end)
+
 ---------------------------------------------------------------- coins & daily
 
 HANDLERS.daily = authed(function(fd, c, msg)
@@ -289,8 +311,9 @@ HANDLERS.watch = authed(function(fd, c, msg)
     -- The previously watched table may already have finished and exited.
     pcall(skynet.call, c.watching, "lua", "unwatch", c.uid)
   end
-  skynet.call(room, "lua", "watch",
+  local ok, err = skynet.call(room, "lua", "watch",
     { uid = c.uid, agent = skynet.self(), fd = fd })
+  if not ok then return nil, err end
   c.watching = room
   return {}
 end)
@@ -439,6 +462,7 @@ end
 
 function CMD.push(fd, msg)
   if conns[fd] then
+    if msg.push == "room_dissolved" then conns[fd].watching = nil end
     send(fd, msg)
   end
 end

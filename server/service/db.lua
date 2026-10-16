@@ -61,6 +61,20 @@ local SCHEMA = {
 }
 
 -- Rating tiers: higher levels climb slower and risk more per loss.
+local chatStore=require 'chat_store'
+for _,sql in ipairs(chatStore.schema) do SCHEMA[#SCHEMA+1]=sql end
+local chat=chatStore.new(function() return mysql end,quote)
+for command,handler in pairs(chat) do
+  CMD[command]=function(...)
+    local ok,data,err=pcall(handler,...)
+    if not ok then
+      if mysql then pcall(function() mysql:query('ROLLBACK') end) end
+      return nil,mysql and 'chat_database_failed' or 'chat_unavailable'
+    end
+    return data,err
+  end
+end
+
 local LEVELS = {
   { min = 0,    win = 20, lose = 0 },
   { min = 100,  win = 16, lose = 2 },
@@ -556,6 +570,7 @@ skynet.start(function()
       user = skynet.getenv "mysql_user",
       password = skynet.getenv "mysql_password",
       max_packet_size = 1024 * 1024,
+      charset = 'utf8mb4',
     }
     for _, sql in ipairs(SCHEMA) do
       local r = mysql:query(sql)
